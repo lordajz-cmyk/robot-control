@@ -1,0 +1,23 @@
+[package]
+name = "robotd"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+relay-protocol = { path = "../relay-protocol" }
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["ws"] }
+futures-util = "0.3"
+socketcan = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+rppal = "0.17"           # GPIO (belysningsrelä)
+linux-embedded-hal = "0.4"
+ssd1306 = "0.10"         # OLED-display — 0.8 krockade med linux-embedded-hal
+                         # 0.4:s embedded-hal 1.0-implementation (bekräftat
+                         # kompileringsfel, runda 3-testet 2026-09-20).
+                         # 0.10 använder embedded-hal 1.0 rakt igenom, matchar.
+embedded-graphics = "0.8"

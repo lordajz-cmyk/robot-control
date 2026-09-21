@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "relay-protocol",
+    "robotd",
+    "robotctl",
+    "client",
+    "mock-robotd",
+]
+# OBS: relay-server är INTE med i workspacet längre. Arkitekturen bytte
+# 2026-09-19 till att robotd lyssnar direkt över WireGuard-VPN:et istället
+# för att ansluta ut till en central reläserver — se PROJECT_SPEC.md §14.
+# relay-server/-mappen ligger kvar som arkiv/referens men bygger inte mot
+# det nuvarande relay-protocol (skulle behöva skrivas om helt för att
+# fortsätta vara relevant, vilket inte är planen just nu).
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"

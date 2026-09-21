@@ -1,0 +1,10 @@
+# Cargo-bygge
+/target/
+
+# Skräp
+*.log
+*.swp
+.DS_Store
+
+# Rester av misslyckad brace-expansion (tomma kataloger)
+/{robotd*/

@@ -1,0 +1,18 @@
+[package]
+name = "robotstyrning"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+relay-protocol = { path = "../relay-protocol" }
+eframe = "0.27"
+egui = "0.27"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+tracing = "0.1"
+gilrs = "0.10"           # PS4-kontroll (Bluetooth + kabel)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "5"        # var vi sparar "tidigare anslutna robotar"
+openh264 = "0.9.8"
