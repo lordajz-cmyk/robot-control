@@ -86,7 +86,7 @@ impl SettingsView {
     /// via net.rs sedan sist.
     pub fn poll_net(&mut self, net: &mut crate::net::NetLink) {
         if let Some(result) = net.vesc_scan_result.take() {
-            self.apply_scan_result(result.iter().map(|s| s.can_id).collect());
+            self.apply_scan_result(result.iter().map(|s| (s.can_id, s.responding)).collect());
         }
         if net.vesc_profile_saved {
             net.vesc_profile_saved = false;
@@ -95,15 +95,19 @@ impl SettingsView {
     }
 
     /// Kallas när svaret kommer in från robotd.
-    pub fn apply_scan_result(&mut self, ids: Vec<u8>) {
+    /// `(can_id, svarade)`. Kända men tysta VESC läggs också till, som
+    /// "Svarar inte", så att roller går att sätta ändå.
+    pub fn apply_scan_result(&mut self, sightings: Vec<(u8, bool)>) {
         self.scanning = false;
-        for id in ids {
-            if !self.vescs.iter().any(|v| v.can_id == id) {
-                self.vescs.push(VescEntry {
+        for (id, responding) in sightings {
+            let seen = if responding { Some(0) } else { None };
+            match self.vescs.iter_mut().find(|v| v.can_id == id) {
+                Some(v) => v.last_seen_ms_ago = seen,
+                None => self.vescs.push(VescEntry {
                     can_id: id,
                     role: None,
-                    last_seen_ms_ago: Some(0),
-                });
+                    last_seen_ms_ago: seen,
+                }),
             }
         }
     }

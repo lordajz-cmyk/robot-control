@@ -79,9 +79,107 @@ pub fn estimate_battery_percent(input_voltage: f32) -> f32 {
     ((input_voltage - EMPTY_V) / (FULL_V - EMPTY_V) * 100.0).clamp(0.0, 100.0)
 }
 
+/// `CMD_GET_VESC_STATUS` (140): nytt kommando i CarController-firmware
+/// (`firmware/0001-cmd-get-vesc-status.patch`). Kortet svarar med de VESC som
+/// det hört CAN-status från. Bara en läsfråga, inget skickas på CAN-bussen.
+/// (Den äldre vägen via `CMD_VESC_FWD`/`COMM_PING_CAN` fungerar inte: kortet
+/// skickar bara vidare till ett redan valt VESC-ID.)
+pub const CMD_GET_VESC_STATUS: u8 = 140;
+/// Längd på en post i svaret: id(1) + ålder ms(2) + rpm(4) + ström*10(2) + duty*1000(2).
+const VESC_STATUS_ENTRY_LEN: usize = 11;
+/// Äldre än så räknas VESC:en som tyst. VESC skickar status många gånger per
+/// sekund när CAN-status är påslagen.
+pub const VESC_STATUS_FRESH_MS: u16 = 2_000;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VescStatusEntry {
+    pub can_id: u8,
+    pub age_ms: u16,
+    pub rpm: i32,
+    pub current_a: f32,
+    pub duty: f32,
+}
+
+impl VescStatusEntry {
+    pub fn is_fresh(&self) -> bool {
+        self.age_ms < VESC_STATUS_FRESH_MS
+    }
+}
+
+pub fn make_vesc_status_request(car_id: u8) -> Vec<u8> {
+    vec![car_id, CMD_GET_VESC_STATUS]
+}
+
+/// Tolka ett paket från Car_Client som svar på `CMD_GET_VESC_STATUS`. Andra
+/// paket (tillstånd, NMEA…) ger `None`.
+pub fn parse_vesc_status_reply(payload: &[u8]) -> Option<Vec<VescStatusEntry>> {
+    let [_id, CMD_GET_VESC_STATUS, rest @ ..] = payload else {
+        return None;
+    };
+    if rest.len() % VESC_STATUS_ENTRY_LEN != 0 {
+        return None; // trasigt eller okänt format
+    }
+    Some(
+        rest.chunks_exact(VESC_STATUS_ENTRY_LEN)
+            .map(|c| VescStatusEntry {
+                can_id: c[0],
+                age_ms: u16::from_be_bytes([c[1], c[2]]),
+                rpm: i32::from_be_bytes([c[3], c[4], c[5], c[6]]),
+                current_a: i16::from_be_bytes([c[7], c[8]]) as f32 / 10.0,
+                duty: i16::from_be_bytes([c[9], c[10]]) as f32 / 1000.0,
+            })
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bygg ett svar som firmware skulle göra: [id][140] + poster.
+    fn entry_bytes(id: u8, age: u16, rpm: i32, cur10: i16, duty1000: i16) -> Vec<u8> {
+        let mut v = vec![id];
+        v.extend(age.to_be_bytes());
+        v.extend(rpm.to_be_bytes());
+        v.extend(cur10.to_be_bytes());
+        v.extend(duty1000.to_be_bytes());
+        v
+    }
+
+    #[test]
+    fn statusfraga_har_ratt_form() {
+        assert_eq!(make_vesc_status_request(4), vec![4, 140]);
+    }
+
+    #[test]
+    fn statussvar_med_tva_vesc_tolkas() {
+        let mut p = vec![4, 140];
+        p.extend(entry_bytes(28, 120, -1500, -35, 250));
+        p.extend(entry_bytes(36, 5_000, 800, 12, -10));
+        let r = parse_vesc_status_reply(&p).unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].can_id, 28);
+        assert_eq!(r[0].rpm, -1500);
+        assert!((r[0].current_a - (-3.5)).abs() < 1e-6);
+        assert!((r[0].duty - 0.25).abs() < 1e-6);
+        assert!(r[0].is_fresh());
+        assert_eq!(r[1].can_id, 36);
+        assert!(!r[1].is_fresh()); // 5 s gammal = tyst
+    }
+
+    #[test]
+    fn statussvar_utan_vesc_ar_tomt_men_giltigt() {
+        assert_eq!(parse_vesc_status_reply(&[4, 140]), Some(vec![]));
+    }
+
+    #[test]
+    fn andra_paket_och_trasiga_svar_ignoreras() {
+        assert_eq!(parse_vesc_status_reply(&[4, 120, 0, 0]), None); // tillståndssvar
+        assert_eq!(parse_vesc_status_reply(&[4, 63, 1, 2, 3]), None); // NMEA
+        assert_eq!(parse_vesc_status_reply(&[4]), None);
+        assert_eq!(parse_vesc_status_reply(&[]), None);
+        assert_eq!(parse_vesc_status_reply(&[4, 140, 28, 0, 1]), None); // trunkerad post
+    }
 
     #[test]
     fn battery_estimate_clampar() {

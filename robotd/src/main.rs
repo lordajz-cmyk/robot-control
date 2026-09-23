@@ -181,13 +181,33 @@ async fn main() {
             Some(req) = server.incoming_requests.recv() => {
                 match req {
                     RobotRequest::ScanVescBus { respond_to } => {
-                        // TODO: skanna riktiga CAN-bussen via car_client_link
-                        // när VESC-telemetrins kommando-ID:n är bekräftade
-                        // (se PROJECT_SPEC.md §13). Tills dess: tomt svar,
-                        // så Settings-vyn inte hänger sig i "Skannar...".
-                        tracing::info!("Settings-vy begärde VESC-skanning — ingen riktig CAN-koppling än.");
-                        let result: Vec<VescSighting> = Vec::new();
-                        let _ = respond_to.send(RobotMessage::VescBusResult(result)).await;
+                        // Egen uppgift med egen kortvarig anslutning: en skanning
+                        // kan ta flera sekunder och ska inte blockera huvudloopen.
+                        // Vid fel svarar vi med tom lista (så Settings-vyn inte
+                        // hänger sig i "Skannar...") och loggar orsaken.
+                        tracing::info!("Settings-vy begärde VESC-skanning — frågar styrkortet (CMD_GET_VESC_STATUS).");
+                        let addr = cfg.car_client_addr.clone();
+                        let car_id = cfg.car_client_id;
+                        let known = cfg.known_vesc_ids.clone();
+                        tokio::spawn(async move {
+                            let found: Vec<u8> = match scan_vesc_bus(&addr, car_id).await {
+                                Ok(entries) => {
+                                    tracing::info!("VESC-skanning klar: {entries:?}");
+                                    entries.iter().filter(|e| e.is_fresh()).map(|e| e.can_id).collect()
+                                }
+                                Err(e) => {
+                                    tracing::warn!("VESC-skanning misslyckades: {e}");
+                                    Vec::new()
+                                }
+                            };
+                            let sightings = merge_scan_with_known(&found, &known);
+                            tracing::info!(
+                                "Skickar {} VESC till Settings-vyn ({} svarade, resten är kända men svarade inte).",
+                                sightings.len(),
+                                found.len()
+                            );
+                            let _ = respond_to.send(RobotMessage::VescBusResult(sightings)).await;
+                        });
                     }
                     RobotRequest::SaveVescProfile { profile, respond_to } => {
                         let mut new_cfg = cfg.clone();
@@ -212,6 +232,30 @@ async fn main() {
 #[allow(dead_code)]
 fn _unused(_: StatusUpdate) {}
 
+/// Skanningsresultat + kända ID:n till en lista för Settings-vyn: de som
+/// svarade märks `responding: true`, kända som inte svarade `false`.
+fn merge_scan_with_known(found: &[u8], known: &[u8]) -> Vec<VescSighting> {
+    let mut out: Vec<VescSighting> = found
+        .iter()
+        .map(|&can_id| VescSighting { can_id, responding: true })
+        .collect();
+    for &can_id in known {
+        if !found.contains(&can_id) {
+            out.push(VescSighting { can_id, responding: false });
+        }
+    }
+    out
+}
+
+/// Öppnar en kortvarig anslutning till Car_Client och läser VESC-status från
+/// styrkortet. Svaret kommer direkt om firmware har kommandot, därför den korta
+/// tidsgränsen (utan kommandot blir det bara en timeout).
+async fn scan_vesc_bus(addr: &str, car_id: u8) -> Result<Vec<vesc_can::VescStatusEntry>, String> {
+    let addr = addr.parse().map_err(|e| format!("ogiltig car_client_addr: {e}"))?;
+    let mut link = car_client_link::CarClientLink::connect(addr).await?;
+    link.read_vesc_status(car_id, Duration::from_secs(3)).await
+}
+
 /// Enkel koll för OLED-displayen: är WireGuard-gränssnittet (`wg0`) uppe?
 /// Ingen ping, ingen extern förfrågan — bara att gränssnittet självt
 /// rapporterar "up" i kärnan. Räcker för "syns roboten på VPN:et alls",
@@ -227,4 +271,26 @@ fn check_internet() -> bool {
 /// inget djupare (rör inte serieporten, konkurrerar inte med Car_Client).
 fn check_usb(device_path: &str) -> bool {
     std::path::Path::new(device_path).exists()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kanda_vesc_som_inte_svarade_markeras_tysta() {
+        let s = merge_scan_with_known(&[36], &[28, 36, 76]);
+        let get = |id| s.iter().find(|v| v.can_id == id).map(|v| v.responding);
+        assert_eq!(s.len(), 3);
+        assert_eq!(get(36), Some(true));
+        assert_eq!(get(28), Some(false));
+        assert_eq!(get(76), Some(false));
+    }
+
+    #[test]
+    fn okand_vesc_som_svarar_tas_med() {
+        let s = merge_scan_with_known(&[5], &[28]);
+        assert!(s.iter().any(|v| v.can_id == 5 && v.responding));
+        assert!(s.iter().any(|v| v.can_id == 28 && !v.responding));
+    }
 }

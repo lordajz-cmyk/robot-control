@@ -50,6 +50,14 @@ pub struct RobotConfig {
     /// samma maskin (localhost). Se car_client_link.rs för bakgrund till
     /// varför vi bygger ovanpå den istället för att ta över /dev/car direkt.
     pub car_client_addr: String,
+    /// Bil-ID som Car_Client kör med (`--setid`), första byten i varje paket
+    /// mot Car_Client. Bekräftat 4 på riktiga roboten 2026-09-21.
+    pub car_client_id: u8,
+    /// VESC-ID:n som är kända på den här roboten (VESC Tool). Visas alltid i
+    /// Settings-vyn efter en skanning — "svarar" om skanningen hittade dem,
+    /// annars "svarar inte" — så att roller kan sättas även när skanningen
+    /// via Car_Client inte når dem (se PROJECT_SPEC.md §13).
+    pub known_vesc_ids: Vec<u8>,
     /// Sökvägen till CarController-kortets USB-enhet (t.ex. "/dev/vehicle"
     /// eller "/dev/car", se PROJECT_SPEC.md §11/§13 för vilken som gäller
     /// hos er). Används bara för OLED-displayens "USB: OK/SAKNAS"-kontroll
@@ -111,6 +119,9 @@ impl Default for RobotConfig {
             watchdog_hard_ms: 400,
             lighting_gpio_pin: 17,
             car_client_addr: "127.0.0.1:8300".to_string(),
+            car_client_id: 4,
+            // RobAnt: bekräftat av användaren 2026-09-21 (VESC Tool).
+            known_vesc_ids: vec![28, 36, 76],
             usb_device_path: "/dev/vehicle".to_string(),
             video: VideoConfig::default(),
         }

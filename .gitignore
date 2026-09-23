@@ -8,3 +8,10 @@
 
 # Rester av misslyckad brace-expansion (tomma kataloger)
 /{robotd*/
+
+# Firmware-binärer som flash_styrkort.sh --patch sparar
+fw_out/
+
+# Kartbrickor (cache) och tomma terminalloggar
+osm_tiles/
+/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.txt

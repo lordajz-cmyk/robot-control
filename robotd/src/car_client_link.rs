@@ -53,6 +53,36 @@ impl CarClientLink {
         })
     }
 
+    /// Fråga styrkortet vilka VESC det hört CAN-status från (`CMD_GET_VESC_STATUS`,
+    /// kräver firmware med `firmware/0001-cmd-get-vesc-status.patch`). Bara en
+    /// läsfråga. Utan den firmware kommer inget svar och det blir timeout.
+    /// Övriga paket som Car_Client skickar under tiden (tillstånd, NMEA) hoppas över.
+    pub async fn read_vesc_status(
+        &mut self,
+        car_id: u8,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<crate::vesc_can::VescStatusEntry>, String> {
+        self.send_raw_payload(&crate::vesc_can::make_vesc_status_request(car_id))
+            .await?;
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+            let packets = tokio::time::timeout(left, self.poll_packets())
+                .await
+                .map_err(|_| {
+                    format!(
+                        "inget svar på VESC-statusfrågan inom {timeout:?} \
+                         (kortets firmware saknar troligen CMD_GET_VESC_STATUS)"
+                    )
+                })??;
+            for p in packets {
+                if let Some(entries) = crate::vesc_can::parse_vesc_status_reply(&p) {
+                    return Ok(entries);
+                }
+            }
+        }
+    }
+
     pub async fn send_raw_payload(&mut self, payload: &[u8]) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
         let framed = encode_packet(payload);
