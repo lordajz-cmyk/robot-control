@@ -26,6 +26,7 @@ upphissade RobAnt, verifierat av användaren ("DET FUNKAR!", max 0,45 känns som
 - 🔒 Lås-knapp (och Esc) i klienten slår av AKTIVERA.
 - **Uppstart verifierad 2026-09-23 ~15:35, även efter strömavbrott (huvudströmbrytaren):**
   WireGuard, Car_Client, RTK och robotd startar av sig själva, VESC 3/3, AKTIVERA OK.
+  RControlStation fungerar också efteråt (bekräftat av användaren) — de delar Car_Client som tänkt.
   Två fel hittades och rättades på vägen:
   1. robotd startade inte vid uppstart: `After=car_client.service` + car_client:s
      `After=multi-user.target` gav en ordningscirkel, systemd strök robotds start.
