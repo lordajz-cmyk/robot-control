@@ -101,6 +101,12 @@ async fn main() {
     // Senaste spakvärden från föraren (-1..1), nollade om AKTIVERA inte är på.
     let mut target_throttle = 0.0f32;
     let mut target_steering = 0.0f32;
+    // För körloggen: senaste kommandots AKTIVERA-flagga, antal kommandon sedan
+    // förra loggraden och watchdog-läget, så att det syns vad som händer.
+    let mut last_activated = false;
+    let mut cmds_since_log: u32 = 0;
+    let mut last_wd_state = WatchdogState::HardStop;
+    let mut last_drive_log = Instant::now();
 
     loop {
         tokio::select! {
@@ -109,7 +115,12 @@ async fn main() {
                 let dt = now.duration_since(last_tick).as_secs_f32();
                 last_tick = now;
 
-                match watchdog.state(now) {
+                let wd_state = watchdog.state(now);
+                if wd_state != last_wd_state {
+                    tracing::info!("Watchdog: {last_wd_state:?} -> {wd_state:?}");
+                    last_wd_state = wd_state;
+                }
+                match wd_state {
                     WatchdogState::Ok => {
                         throttle_ramp.step(target_throttle, dt);
                         steering_ramp.step(target_steering, dt);
@@ -126,6 +137,21 @@ async fn main() {
 
                 if let Some(l) = &link {
                     let sp = drive_setpoint(&cfg.drive, throttle_ramp.current(), steering_ramp.current());
+                    // Körlogg en gång per sekund medan någon är ansluten.
+                    if now.duration_since(last_drive_log) >= Duration::from_secs(1) {
+                        if cmds_since_log > 0 || !sp.is_zero() {
+                            tracing::info!(
+                                "Körning: {cmds_since_log} kommandon/s, AKTIVERA={last_activated}, \
+                                 spak gas={target_throttle:.2} styr={target_steering:.2} -> \
+                                 skickar fart={:.3} styr={:.3}, Car_Client {}",
+                                sp.speed,
+                                sp.steering,
+                                if *l.connected.borrow() { "ansluten" } else { "EJ ansluten" },
+                            );
+                        }
+                        cmds_since_log = 0;
+                        last_drive_log = now;
+                    }
                     l.setpoint.send_if_modified(|cur| {
                         let changed = *cur != sp;
                         *cur = sp;
@@ -152,6 +178,8 @@ async fn main() {
             }
             Some(cmd) = server.incoming_control.recv() => {
                 watchdog.command_received(Instant::now());
+                cmds_since_log += 1;
+                last_activated = cmd.activated;
                 tracing::debug!("Kommando mottaget: throttle={} steering={}", cmd.throttle, cmd.steering);
                 // Klienten nollar redan när AKTIVERA är av, men robotd litar inte på det.
                 let clean = |v: f32| if cmd.activated && v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };

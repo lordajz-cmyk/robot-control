@@ -122,8 +122,9 @@ samma protokoll — men GUI:t och nätverkslagret byggs om helt.
 
 ## 6. Kontrollschema (PS4-dosa, beslutat)
 
-- **Höger spak (upp/ner):** gas/broms
-- **Vänster spak (vänster/höger):** styrning
+- **Vänster spak (upp/ner):** gas/broms
+- **Höger spak (vänster/höger):** styrning
+  (Ändrat 2026-09-23 till samma som i RControlStation, som föraren är van vid.)
 - **L1/L2:** lastarm upp/ner (om monterad)
 - **R1/R2:** tilt (om monterad)
 - Tillvalsfunktioner (lastarm/tilt) är **inte** låsta bakom AKTIVERA-knappen — går

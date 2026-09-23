@@ -1,6 +1,6 @@
 //! PS4-kontroll via gilrs. Styrschema (beslutat):
-//!   - Höger spak upp/ner -> gas/broms
-//!   - Vänster spak vänster/höger -> styrning
+//!   - Vänster spak upp/ner -> gas/broms (samma som RControlStation)
+//!   - Höger spak vänster/höger -> styrning
 //!   - L1/L2 -> tillval A (t.ex. lastarm)
 //!   - R1/R2 -> tillval B (t.ex. tilt)
 //! Klienten skickar en generell signal; robotd översätter till rätt VESC
@@ -33,8 +33,8 @@ fn apply_deadzone(value: f32) -> f32 {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GamepadState {
-    pub throttle: f32,   // -1.0..=1.0, höger spak Y
-    pub steering: f32,   // -1.0..=1.0, vänster spak X
+    pub throttle: f32,   // -1.0..=1.0, vänster spak Y (som i RControlStation)
+    pub steering: f32,   // -1.0..=1.0, höger spak X
     pub accessory_a: f32, // L1/L2, -1.0..=1.0
     pub accessory_b: f32, // R1/R2, -1.0..=1.0
     pub connected: bool,
@@ -64,8 +64,8 @@ impl GamepadReader {
             };
         };
 
-        let throttle = apply_deadzone(gp.axis_data(Axis::RightStickY).map(|a| a.value()).unwrap_or(0.0));
-        let steering = apply_deadzone(gp.axis_data(Axis::LeftStickX).map(|a| a.value()).unwrap_or(0.0));
+        let throttle = apply_deadzone(gp.axis_data(Axis::LeftStickY).map(|a| a.value()).unwrap_or(0.0));
+        let steering = apply_deadzone(gp.axis_data(Axis::RightStickX).map(|a| a.value()).unwrap_or(0.0));
 
         let l2 = gp.button_data(Button::LeftTrigger2).map(|b| b.value()).unwrap_or(0.0);
         let l1 = if gp.is_pressed(Button::LeftTrigger) { 1.0 } else { 0.0 };
