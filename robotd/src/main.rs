@@ -28,45 +28,23 @@ async fn main() {
     let cfg = RobotConfig::load_or_default(Path::new(CONFIG_PATH));
     tracing::info!("robotd startar som '{}'", cfg.robot_id);
 
-    // Ansluter till det redan körande Car_Client (se PROJECT_SPEC.md §13) —
-    // det är kortlänken, oberoende av nätverket mot klienten nedan.
-    //
-    // Upprepade försök, inte bara ett: systemd-tjänsten har redan en
-    // 90-sekunders paus innan robotd ens startar (se install_pi.sh, lärdom
-    // från RControlStation-erfarenheten — 5G-modem ~90s, CarController
-    // ~60s att bli redo), men den pausen är en fast gissning. Om Car_Client
-    // av någon anledning tar längre tid en enskild dag ska robotd ändå
-    // hitta den istället för att permanent ge upp efter ett enda försök.
-    let mut car_client_ok = false;
-    match cfg.car_client_addr.parse() {
-        Ok(addr) => {
-            const MAX_ATTEMPTS: u32 = 10;
-            const RETRY_DELAY: Duration = Duration::from_secs(3);
-            for attempt in 1..=MAX_ATTEMPTS {
-                match car_client_link::CarClientLink::connect(addr).await {
-                    Ok(_link) => {
-                        tracing::info!("Ansluten till Car_Client-länken (försök {attempt}/{MAX_ATTEMPTS}).");
-                        car_client_ok = true;
-                        break;
-                    }
-                    Err(e) if attempt < MAX_ATTEMPTS => {
-                        tracing::warn!(
-                            "Kunde inte ansluta till Car_Client än (försök {attempt}/{MAX_ATTEMPTS}): {e}. \
-                             Försöker igen om {RETRY_DELAY:?}."
-                        );
-                        tokio::time::sleep(RETRY_DELAY).await;
-                    }
-                    Err(e) => tracing::error!(
-                        "Gav upp att ansluta till Car_Client på {addr} efter {MAX_ATTEMPTS} försök: {e}. \
-                         Kontrollera att car_client.service kör (systemctl status car_client.service, \
-                         eller screen -r car för live-loggen) på Pi:n, och att porten i config.json stämmer. \
-                         robotd fortsätter köra ändå (belysning/OLED/nätverk fungerar oberoende)."
-                    ),
-                }
-            }
+    // Länken till det redan körande Car_Client (se PROJECT_SPEC.md §13) i en
+    // egen uppgift som återansluter själv — Car_Client kan starta senare än
+    // robotd eller startas om. Styrning och skanning går båda genom den,
+    // eftersom Car_Client bara tar en klient åt gången.
+    let link = match cfg.car_client_addr.parse() {
+        Ok(addr) => Some(car_client_link::spawn(car_client_link::LinkParams {
+            addr,
+            car_id: cfg.car_client_id,
+            speed_activity: cfg.drive.speed_activity,
+            steering_activity: cfg.drive.steering_activity,
+        })),
+        Err(e) => {
+            tracing::error!("Ogiltig car_client_addr i config: {e} — ingen körning möjlig.");
+            None
         }
-        Err(e) => tracing::error!("Ogiltig car_client_addr i config: {e}"),
-    }
+    };
+    let car_client_ok = || link.as_ref().is_some_and(|l| *l.connected.borrow());
 
     let mut lighting = match gpio_lighting::LightingRelay::new(cfg.lighting_gpio_pin, false) {
         Ok(l) => {
@@ -94,7 +72,7 @@ async fn main() {
         let _ = d.show(&display::DisplayStatus {
             pairing_code: None,
             internet_ok: check_internet(),
-            car_client_ok,
+            car_client_ok: car_client_ok(),
             usb_ok: check_usb(&cfg.usb_device_path),
             battery_percent: None, // väntar på §13
             last_error: None,
@@ -120,6 +98,9 @@ async fn main() {
     // stängt lock, var 2:a sekund räcker gott för att vara "levande" när
     // man väl öppnar den.
     let mut display_tick = tokio::time::interval(Duration::from_secs(2));
+    // Senaste spakvärden från föraren (-1..1), nollade om AKTIVERA inte är på.
+    let mut target_throttle = 0.0f32;
+    let mut target_steering = 0.0f32;
 
     loop {
         tokio::select! {
@@ -127,9 +108,6 @@ async fn main() {
                 let now = Instant::now();
                 let dt = now.duration_since(last_tick).as_secs_f32();
                 last_tick = now;
-
-                let target_throttle = 0.0; // sätts av senaste inkommande ControlCommand
-                let target_steering = 0.0;
 
                 match watchdog.state(now) {
                     WatchdogState::Ok => {
@@ -146,9 +124,14 @@ async fn main() {
                     }
                 }
 
-                // TODO: skicka throttle_ramp.current()/steering_ramp.current()
-                // som VESC-kommandon via vesc_can::make_set_rpm_frame enligt
-                // sparad rollmappning i cfg.vesc_profile.
+                if let Some(l) = &link {
+                    let sp = drive_setpoint(&cfg.drive, throttle_ramp.current(), steering_ramp.current());
+                    l.setpoint.send_if_modified(|cur| {
+                        let changed = *cur != sp;
+                        *cur = sp;
+                        changed
+                    });
+                }
 
                 // TODO: bygg en riktig StatusUpdate från Car_Client-telemetri
                 // (hastighet, batteri, GPS, VESC-temp) och skicka den via
@@ -160,7 +143,7 @@ async fn main() {
                     let _ = d.show(&display::DisplayStatus {
                         pairing_code: None,
                         internet_ok: check_internet(),
-                        car_client_ok,
+                        car_client_ok: car_client_ok(),
                         usb_ok: check_usb(&cfg.usb_device_path),
                         battery_percent: None, // väntar på §13
                         last_error: None,
@@ -170,6 +153,10 @@ async fn main() {
             Some(cmd) = server.incoming_control.recv() => {
                 watchdog.command_received(Instant::now());
                 tracing::debug!("Kommando mottaget: throttle={} steering={}", cmd.throttle, cmd.steering);
+                // Klienten nollar redan när AKTIVERA är av, men robotd litar inte på det.
+                let clean = |v: f32| if cmd.activated && v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };
+                target_throttle = clean(cmd.throttle);
+                target_steering = clean(cmd.steering);
 
                 if cmd.lights != lights_on {
                     if let Some(l) = &mut lighting {
@@ -186,11 +173,10 @@ async fn main() {
                         // Vid fel svarar vi med tom lista (så Settings-vyn inte
                         // hänger sig i "Skannar...") och loggar orsaken.
                         tracing::info!("Settings-vy begärde VESC-skanning — frågar styrkortet (CMD_GET_VESC_STATUS).");
-                        let addr = cfg.car_client_addr.clone();
-                        let car_id = cfg.car_client_id;
                         let known = cfg.known_vesc_ids.clone();
+                        let scan = link.as_ref().map(|l| l.scan.clone());
                         tokio::spawn(async move {
-                            let found: Vec<u8> = match scan_vesc_bus(&addr, car_id).await {
+                            let found: Vec<u8> = match scan_vesc_bus(scan).await {
                                 Ok(entries) => {
                                     tracing::info!("VESC-skanning klar: {entries:?}");
                                     entries.iter().filter(|e| e.is_fresh()).map(|e| e.can_id).collect()
@@ -247,13 +233,27 @@ fn merge_scan_with_known(found: &[u8], known: &[u8]) -> Vec<VescSighting> {
     out
 }
 
-/// Öppnar en kortvarig anslutning till Car_Client och läser VESC-status från
-/// styrkortet. Svaret kommer direkt om firmware har kommandot, därför den korta
-/// tidsgränsen (utan kommandot blir det bara en timeout).
-async fn scan_vesc_bus(addr: &str, car_id: u8) -> Result<Vec<vesc_can::VescStatusEntry>, String> {
-    let addr = addr.parse().map_err(|e| format!("ogiltig car_client_addr: {e}"))?;
-    let mut link = car_client_link::CarClientLink::connect(addr).await?;
-    link.read_vesc_status(car_id, Duration::from_secs(3)).await
+/// Ber länkuppgiften fråga styrkortet om VESC-status.
+async fn scan_vesc_bus(
+    scan: Option<tokio::sync::mpsc::Sender<car_client_link::ScanReply>>,
+) -> Result<Vec<vesc_can::VescStatusEntry>, String> {
+    let scan = scan.ok_or("ingen Car_Client-länk (ogiltig car_client_addr)")?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    scan.send(tx).await.map_err(|_| "Car_Client-länken har avslutats")?;
+    rx.await.map_err(|_| "Car_Client-länken avbröt skanningen".to_string())?
+}
+
+/// Rampade spakvärden (-1..1) till värden för styrkortet enligt config.
+fn drive_setpoint(d: &config::DriveConfig, throttle: f32, steering: f32) -> car_client_link::DriveSetpoint {
+    let scale = |v: f32, max: f32, invert: bool| {
+        let max = max.clamp(0.0, 1.0);
+        let v = v.clamp(-1.0, 1.0) * max;
+        if invert { -v } else { v }
+    };
+    car_client_link::DriveSetpoint {
+        speed: scale(throttle, d.speed_max, d.invert_speed),
+        steering: scale(steering, d.steering_max, d.invert_steering),
+    }
 }
 
 /// Enkel koll för OLED-displayen: är WireGuard-gränssnittet (`wg0`) uppe?
@@ -285,6 +285,20 @@ mod tests {
         assert_eq!(get(36), Some(true));
         assert_eq!(get(28), Some(false));
         assert_eq!(get(76), Some(false));
+    }
+
+    #[test]
+    fn spakvarden_skalas_och_begransas() {
+        let d = config::DriveConfig::default();
+        let sp = drive_setpoint(&d, 1.0, -0.5);
+        assert!((sp.speed - 0.15).abs() < 1e-6);
+        assert!((sp.steering + 0.075).abs() < 1e-6);
+        // Trasig config kan aldrig ge mer än fullt utslag.
+        let wild = config::DriveConfig { speed_max: 7.0, steering_max: 7.0, invert_steering: true, ..d };
+        let sp = drive_setpoint(&wild, 3.0, 1.0);
+        assert_eq!(sp.speed, 1.0);
+        assert_eq!(sp.steering, -1.0);
+        assert!(drive_setpoint(&d, 0.0, 0.0).is_zero());
     }
 
     #[test]

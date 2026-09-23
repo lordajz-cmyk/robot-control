@@ -132,6 +132,22 @@ pub fn parse_vesc_status_reply(payload: &[u8]) -> Option<Vec<VescStatusEntry>> {
     )
 }
 
+/// `CMD_RC_CONTROL_ADV` (125): samma kommando som RControlStation skickar när
+/// dosan styr (`PacketInterface::setRcControlAdvanced`). Kortet slår upp alla
+/// aktuatorer med den aktiviteten (sparade på kortet via Confcommon → Write)
+/// och skickar värdet till deras VESC i aktuatorns läge (duty/ström/rpm).
+/// Bekräftat mot `commands.c` och körning på RobAnt 2026-09-23.
+pub const CMD_RC_CONTROL_ADV: u8 = 125;
+
+/// `[bil-ID][125][aktivitet][värde*1e4 som i32 big-endian]`, byte för byte som
+/// `buffer_append_double32(value, 1e4)` i RControlStation.
+pub fn make_rc_control_adv(car_id: u8, activity: u8, value: f32) -> Vec<u8> {
+    let raw = (value as f64 * 1e4) as i32;
+    let mut v = vec![car_id, CMD_RC_CONTROL_ADV, activity];
+    v.extend(raw.to_be_bytes());
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,6 +195,15 @@ mod tests {
         assert_eq!(parse_vesc_status_reply(&[4]), None);
         assert_eq!(parse_vesc_status_reply(&[]), None);
         assert_eq!(parse_vesc_status_reply(&[4, 140, 28, 0, 1]), None); // trunkerad post
+    }
+
+    #[test]
+    fn styrpaket_matchar_rcontrolstation() {
+        // 0.15 * 1e4 = 1500 = 0x05DC
+        assert_eq!(make_rc_control_adv(4, 10, 0.15), vec![4, 125, 10, 0, 0, 0x05, 0xDC]);
+        // -0.15 -> -1500 = 0xFFFFFA24
+        assert_eq!(make_rc_control_adv(4, 11, -0.15), vec![4, 125, 11, 0xFF, 0xFF, 0xFA, 0x24]);
+        assert_eq!(make_rc_control_adv(4, 10, 0.0), vec![4, 125, 10, 0, 0, 0, 0]);
     }
 
     #[test]

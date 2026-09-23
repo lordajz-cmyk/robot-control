@@ -65,6 +65,41 @@ pub struct RobotConfig {
     pub usb_device_path: String,
     /// Kameraströmmen till klienten, se `video.rs`.
     pub video: VideoConfig,
+    /// Hur spakvärdena skickas till styrkortet, se `DriveConfig`.
+    pub drive: DriveConfig,
+}
+
+/// Körning via styrkortet (`CMD_RC_CONTROL_ADV`). Kortet väljer självt vilka
+/// VESC som hör till en aktivitet (aktuatorerna i Confcommon-fliken), så här
+/// anges bara aktivitets-ID:n och hur stora värden som skickas.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DriveConfig {
+    /// Aktivitet för gas/broms ("Speed Control" i RControlStation = 10).
+    pub speed_activity: u8,
+    /// Aktivitet för styrning ("Steering Control" = 11).
+    pub steering_activity: u8,
+    /// Värde som skickas vid fullt spakutslag. Motsvarar "Max" (throttleMaxBox)
+    /// i RControlStation, som är 0.15 som standard. Hur det tolkas (duty,
+    /// ström, rpm) bestäms av aktuatorns läge på kortet.
+    pub speed_max: f32,
+    pub steering_max: f32,
+    /// Byt tecken om roboten kör/svänger åt fel håll.
+    pub invert_speed: bool,
+    pub invert_steering: bool,
+}
+
+impl Default for DriveConfig {
+    fn default() -> Self {
+        Self {
+            speed_activity: 10,
+            steering_activity: 11,
+            speed_max: 0.15,
+            steering_max: 0.15,
+            invert_speed: false,
+            invert_steering: false,
+        }
+    }
 }
 
 /// Inställningar för kameraströmmen. Standardvärdena är valda för en länk på
@@ -124,6 +159,7 @@ impl Default for RobotConfig {
             known_vesc_ids: vec![28, 36, 76],
             usb_device_path: "/dev/vehicle".to_string(),
             video: VideoConfig::default(),
+            drive: DriveConfig::default(),
         }
     }
 }
