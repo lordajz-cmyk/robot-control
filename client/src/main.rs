@@ -275,6 +275,10 @@ impl App {
         if !self.gamepad_connected {
             self.activated = false;
         }
+        // Esc låser också, snabbare än att sikta på knappen.
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.activated = false;
+        }
 
         // Skicka styrkommando varje bildruta. Gas/styr nollställs om vi
         // inte är aktiverade (dosan låst), men tillval (lastarm/tilt) och
@@ -397,9 +401,24 @@ impl App {
 
                 // Belysningsknapp + körläge + inställningar, övre högra hörnet.
                 egui::Area::new("lighting".into())
-                    .fixed_pos(rect.right_top() + egui::vec2(-290.0, 16.0))
+                    .fixed_pos(rect.right_top() + egui::vec2(-370.0, 16.0))
                     .show(ctx, |ui| {
                         ui.horizontal(|ui| {
+                            // Lås = slå av AKTIVERA direkt. Gas/styr nollas i nästa
+                            // kommando och robotd rampar ner; AKTIVERA krävs igen.
+                            if self.activated
+                                && ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new("🔒 Lås").color(egui::Color32::WHITE).strong(),
+                                        )
+                                        .fill(egui::Color32::from_rgb(170, 40, 40)),
+                                    )
+                                    .on_hover_text("Lås körningen (samma som att AKTIVERA slås av). Tangent: Esc")
+                                    .clicked()
+                            {
+                                self.activated = false;
+                            }
                             let lights_label = if self.lights_on { "💡 Belysning PÅ" } else { "💡 Belysning" };
                             if ui.button(lights_label).clicked() {
                                 self.lights_on = !self.lights_on;
