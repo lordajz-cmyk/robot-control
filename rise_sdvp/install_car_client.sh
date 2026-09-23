@@ -159,10 +159,18 @@ if [ -n "$DEFAULT_USER" ]; then
   echo ""
   SWEPOS_PASS=${SWEPOS_PASS:-$DEFAULT_PASS}
 else
-  read -p "Mata in ditt Swepos-användarnamn: " SWEPOS_USER
-  read -s -p "Mata in ditt Swepos-lösenord: " SWEPOS_PASS
-  echo ""
+  echo -e "Swepos behövs bara för RTK (cm-noggrann GPS till karta/autopilot i RControlStation)."
+  echo -e "robotstyrning/robotd använder inte GPS. ${BOLD}Tryck Enter för att hoppa över RTK.${NC}"
+  read -p "Mata in ditt Swepos-användarnamn (tomt = hoppa över): " SWEPOS_USER
+  if [ -n "$SWEPOS_USER" ]; then
+    read -s -p "Mata in ditt Swepos-lösenord: " SWEPOS_PASS
+    echo ""
+  fi
 fi
+
+if [ -z "$SWEPOS_USER" ]; then
+  echo -e "${YELLOW}Hoppar över Swepos/RTK (car_rtk.service skapas inte). Kör skriptet igen för att lägga till det senare.${NC}\n"
+else
 
 read -p "Mata in din basstations Latitud [$DEFAULT_LAT]: " SWEPOS_LAT
 SWEPOS_LAT=${SWEPOS_LAT:-$DEFAULT_LAT}
@@ -195,6 +203,7 @@ systemctl enable car_rtk.service
 systemctl restart car_rtk.service
 
 echo -e "${GREEN}✅ Swepos RTK-tjänst konfigurerad och startad!${NC}\n"
+fi
 
 # ------------------------------------------------------------------------------
 # 💻 STEG 4: Kompilera Car_Client

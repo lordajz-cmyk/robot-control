@@ -90,8 +90,10 @@ Sedan visas en sammanfattning, och inget görs förrän du skriver `ja`. Däreft
 2. Kopierar robot-control till `~/robot-control` på Pi:n.
 3. **WireGuard:** frågar namn och sista siffran i IP:n. Lägg sedan till Pi:ns
    publika nyckel på VPN-servern.
-4. **Grundsystemet:** frågar efter Swepos-konto (användare, lösenord och
-   basstationens position) och bygger Car_Client. Tar några minuter.
+4. **Grundsystemet:** bygger Car_Client (tar några minuter) och frågar efter
+   Swepos-konto för RTK. **Swepos är valfritt.** robotstyrning använder inte GPS,
+   så tryck bara Enter för att hoppa över RTK. Det behövs bara för
+   centimeterexakt position i RControlStation.
 5. **robotd:** byggs, installeras och startas som tjänst som startar vid uppstart.
 6. Erbjuder att lägga robotens namn i datorns `/etc/hosts`, så att du kan skriva
    namnet i robotstyrning i stället för IP:n.
