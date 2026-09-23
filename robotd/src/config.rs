@@ -221,3 +221,34 @@ impl RobotConfig {
         std::fs::write(path, s)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Samma form som scripts/install_pi.sh skriver (via ny_robot.sh).
+    #[test]
+    fn config_fran_installationsskriptet_las_ratt() {
+        let json = r#"{
+          "robot_id": "test",
+          "bind_addr": "192.168.200.20:9000",
+          "vesc_profile": { "roller": {} },
+          "watchdog_soft_ms": 150,
+          "watchdog_hard_ms": 400,
+          "lighting_gpio_pin": 17,
+          "car_client_addr": "127.0.0.1:8300",
+          "car_client_id": 7,
+          "known_vesc_ids": [28, 36, 76],
+          "usb_device_path": "/dev/vehicle",
+          "drive": { "speed_max": 0.5, "steering_max": 0.5 }
+        }"#;
+        let cfg: RobotConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.car_client_id, 7);
+        assert_eq!(cfg.known_vesc_ids, vec![28, 36, 76]);
+        assert_eq!(cfg.drive.speed_max, 0.5);
+        // Fält som inte står i filen får standardvärden.
+        assert_eq!(cfg.drive.speed_activity, 10);
+        assert_eq!(cfg.drive.max_cap, 1.0);
+        assert!(cfg.video.enabled);
+    }
+}

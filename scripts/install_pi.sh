@@ -54,7 +54,9 @@ sudo apt-get install -y \
   curl
 
 echo "--- Aktiverar I2C (för OLED-displayen) om det inte redan är på ---"
-if command -v raspi-config >/dev/null 2>&1; then
+if [ "${SKIPPA_I2C:-0}" = "1" ]; then
+  echo "Hoppar över I2C (SKIPPA_I2C=1)."
+elif command -v raspi-config >/dev/null 2>&1; then
   sudo raspi-config nonint do_i2c 0 || echo "Kunde inte aktivera I2C automatiskt — gör det manuellt via raspi-config > Interface Options > I2C."
 else
   echo "raspi-config hittades inte — kontrollera manuellt att I2C är påslaget (/boot/config.txt: dtparam=i2c_arm=on)."
@@ -79,8 +81,19 @@ sudo install -m 755 target/release/robotctl /usr/local/bin/robotctl
 
 echo "--- Skapar konfiguration om den saknas ---"
 sudo mkdir -p /etc/robotd
+if [ -f /etc/robotd/config.json ] && [ "${SKRIV_OVER_CONFIG:-0}" = "1" ]; then
+  BACKUP="/etc/robotd/config.json.bak_$(date +%Y%m%d_%H%M%S)"
+  sudo cp /etc/robotd/config.json "$BACKUP"
+  sudo rm /etc/robotd/config.json
+  echo "Gammal config sparad som $BACKUP, skriver en ny."
+fi
 if [ ! -f /etc/robotd/config.json ]; then
   ROBOT_ID="${ROBOT_ID:-robot-1}"
+  # Car_Client:s --setid (första byten i varje paket), VESC-ID:n på roboten
+  # och Max vid fullt spakutslag (som i RControlStation).
+  CAR_ID="${CAR_ID:-4}"
+  VESC_IDS="${VESC_IDS:-28,36,76}"
+  DRIVE_MAX="${DRIVE_MAX:-0.45}"
   # bind_addr: robotd lyssnar direkt över er WireGuard-VPN (se
   # PROJECT_SPEC.md §14) — ingen central reläserver. Sätt detta till
   # robotens fasta VPN-IP (t.ex. "192.168.200.8:9000", se ert
@@ -101,10 +114,13 @@ if [ ! -f /etc/robotd/config.json ]; then
   "watchdog_hard_ms": 400,
   "lighting_gpio_pin": 17,
   "car_client_addr": "127.0.0.1:8300",
-  "usb_device_path": "${USB_DEVICE_PATH}"
+  "car_client_id": ${CAR_ID},
+  "known_vesc_ids": [${VESC_IDS}],
+  "usb_device_path": "${USB_DEVICE_PATH}",
+  "drive": { "speed_max": ${DRIVE_MAX}, "steering_max": ${DRIVE_MAX} }
 }
 EOF
-  echo "Skapade /etc/robotd/config.json (robot_id=${ROBOT_ID}, bind_addr=${BIND_ADDR}, usb_device_path=${USB_DEVICE_PATH})."
+  echo "Skapade /etc/robotd/config.json (robot_id=${ROBOT_ID}, bind_addr=${BIND_ADDR}, bil-ID=${CAR_ID}, VESC=${VESC_IDS}, max=${DRIVE_MAX})."
   echo "Om ni kör WireGuard: sätt bind_addr till robotens wg0-IP + port,"
   echo "t.ex. 192.168.200.8:9000, så robotd bara syns på VPN:et."
   echo "OBS: koden tolererar numera saknade/nya fält i config.json (fylls"

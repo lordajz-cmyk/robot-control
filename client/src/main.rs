@@ -376,10 +376,23 @@ impl App {
                         });
                 }
 
+                // Ljusgrön text på mörk, halvgenomskinlig botten — läsbar även
+                // när kamerabilden bakom är ljus (dagsljus, himmel).
                 egui::Area::new("status".into())
                     .fixed_pos(rect.left_top() + egui::vec2(16.0, 16.0))
                     .show(ctx, |ui| {
-                        ui.colored_label(egui::Color32::WHITE, self.status_text());
+                        egui::Frame::none()
+                            .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 170))
+                            .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+                            .rounding(6.0)
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(self.status_text())
+                                        .color(egui::Color32::from_rgb(140, 255, 140))
+                                        .size(16.0)
+                                        .strong(),
+                                );
+                            });
                     });
 
                 // Belysningsknapp + körläge + inställningar, övre högra hörnet.
