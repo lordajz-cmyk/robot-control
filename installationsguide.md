@@ -104,10 +104,11 @@ Skriptet bygger firmware från `rise_sdvp/Embedded/RC_Controller` och flashar EL
 Styrkortets sparade inställningar (EEPROM) behålls. Du skriver `FLASHA` för att bekräfta.
 
 > **Nytt styrkort:** det behöver aktuatorinställningarna en gång. Där bestäms
-> vilken VESC som är fart (aktivitet 10, "Speed Control") och vilken som är
-> styrning (aktivitet 11, "Steering Control"), och i vilket läge. Det görs idag i
-> **RControlStation** (Confcommon-fliken → Write). Den finns inte i det här
-> repot än.
+> vilken VESC som är fart och vilken som är styrning, och i vilket läge. Det görs
+> i robotstyrning: **⚙ Inställningar → Styrkortets aktuatorer**. Tryck
+> **Läs från styrkortet**, ställ in raderna och tryck **Skriv till styrkortet**.
+> Exempel för RobAnt: antal 3; VESC 28 och 36 = Fart, 76 = Styrning, alla Duty.
+> Samma sak som Confcommon → Write i RControlStation. Roboten får inte vara aktiverad.
 
 ### 3.4 Första körningen
 Roboten upphissad första gången.
@@ -154,7 +155,7 @@ PI=användare@192.168.200.x bash scripts/skicka_robotd.sh        # robotd på ro
 | VESC 0/3 svarar | Styrkortet saknar matning på strömplinten, eller CAN status av i VESC:erna | Se avsnitt 1 |
 | Batteri ~2–3 V | Styrkortet går bara på USB | Mata strömplinten |
 | AKTIVERA går inte att trycka | Texten under knappen säger varför (VESC, kamera) | Byt till LOS om kameran saknas |
-| Kör men ingenting rör sig | Aktuatorerna på styrkortet saknar aktivitet 10/11 | RControlStation → Confcommon → Read/Write |
+| Kör men ingenting rör sig | Aktuatorerna på styrkortet saknar aktivitet 10/11 | ⚙ Inställningar → Styrkortets aktuatorer → Läs, rätta, Skriv |
 | Går trögt | Max för lågt | Höj Max uppe till höger |
 | Anslutningen bryts direkt | Två robotd kör (manuell + tjänst) | Pi:n: `sudo pkill -x robotd; sudo systemctl restart robotd` |
 
