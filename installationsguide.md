@@ -44,9 +44,13 @@ I guiden står det var varje kommando körs:
 ```bash
 git clone git@github.com:lordajz-cmyk/robot-control.git
 cd robot-control
-bash scripts/install_client.sh        # bygger robotstyrning, lägger den i ~/.local/bin + skrivbordsgenväg
+bash scripts/install_client.sh        # bygger robotstyrning + genväg i terminalen och programmenyn
 sudo ./wireguard/wireguard.sh         # datorn på VPN:et, se wireguard/Wireguard_Guide.md
 ```
+
+Sedan startar du programmet genom att skriva `Robotstyrning` (eller `robotstyrning`)
+i valfri terminal, eller från programmenyn. Genvägen pekar på det senast byggda
+programmet, så efter `git pull` + `install_client.sh` gäller den nya versionen direkt.
 
 VPN-servern sätts upp en gång med `wireguard/wireguard_admin.sh`, se
 [wireguard/Wireguard_Server_Guide.md](wireguard/Wireguard_Server_Guide.md).
@@ -113,7 +117,7 @@ Styrkortets sparade inställningar (EEPROM) behålls. Du skriver `FLASHA` för a
 ### 3.4 Första körningen
 Roboten upphissad första gången.
 
-1. **Datorn:** starta **robotstyrning** (skrivbordsgenvägen eller `robotstyrning`).
+1. **Datorn:** starta **Robotstyrning** (skriv `Robotstyrning` i en terminal, eller från programmenyn).
 2. Skriv robotens namn eller WireGuard-IP och anslut.
 3. Uppe till vänster ska det stå ungefär **Batteri: 52.6 V**, **VESC: 3/3 svarar**.
 4. Tryck **AKTIVERA**. I CAM-läge krävs kamerabild. Byt till **LOS** om du kör

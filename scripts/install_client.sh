@@ -64,15 +64,26 @@ fi
 echo "--- Bygger klienten och mock-robotd (release) ---"
 cargo build --release -p robotstyrning -p mock-robotd
 
-echo "--- Installerar binärer till ~/.local/bin ---"
+echo "--- Genvägar i ~/.local/bin (robotstyrning / Robotstyrning) ---"
+# Länkar, inte kopior (samma som RControlStation): efter en ny `cargo build
+# --release` eller `git pull` + omkörning av det här skriptet gäller den nya
+# versionen direkt, i alla terminaler.
+REPO="$(pwd)"
 mkdir -p "$HOME/.local/bin"
-install -m 755 target/release/robotstyrning "$HOME/.local/bin/robotstyrning"
-install -m 755 target/release/mock-robotd "$HOME/.local/bin/mock-robotd"
+for namn in robotstyrning Robotstyrning; do
+  ln -sfn "$REPO/target/release/robotstyrning" "$HOME/.local/bin/$namn"
+done
+ln -sfn "$REPO/target/release/mock-robotd" "$HOME/.local/bin/mock-robotd"
 
-if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
-  echo ""
-  echo "OBS: ~/.local/bin ligger inte i din PATH än. Lägg till i din ~/.bashrc:"
-  echo '  export PATH="$HOME/.local/bin:$PATH"'
+# ~/.local/bin måste finnas i PATH. Ubuntu lägger till den vid inloggning om
+# mappen finns, men inte alltid i redan öppna terminaler — säkra med .bashrc.
+if ! grep -q 'robot-control: ~/.local/bin' "$HOME/.bashrc" 2>/dev/null; then
+  cat >> "$HOME/.bashrc" <<'RC'
+
+# robot-control: ~/.local/bin i PATH (robotstyrning, mock-robotd)
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac
+RC
+  echo "Lade till ~/.local/bin i PATH via ~/.bashrc (gäller nya terminaler)."
 fi
 
 echo "--- Skapar skrivbordsgenväg ---"
@@ -93,7 +104,7 @@ cat <<'EOF'
 === Klart ===
 
 Installerat:
-  robotstyrning       (klienten — kör: robotstyrning)
+  robotstyrning       (klienten — skriv robotstyrning eller Robotstyrning i valfri terminal)
   mock-robotd         (låtsas-roboten, för lokal test utan hårdvara)
 
 Snabbtest utan någon hårdvara alls (två terminaler):
