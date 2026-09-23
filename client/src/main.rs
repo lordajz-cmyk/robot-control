@@ -400,8 +400,10 @@ impl App {
                     });
 
                 // Belysningsknapp + körläge + inställningar, övre högra hörnet.
+                // Förankrad i övre högra hörnet: raden växer åt vänster när
+                // Lås-knappen dyker upp, kugghjulet ligger alltid ytterst.
                 egui::Area::new("lighting".into())
-                    .fixed_pos(rect.right_top() + egui::vec2(-370.0, 16.0))
+                    .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-16.0, 16.0))
                     .show(ctx, |ui| {
                         ui.horizontal(|ui| {
                             // Lås = slå av AKTIVERA direkt. Gas/styr nollas i nästa
@@ -441,11 +443,6 @@ impl App {
                                 };
                             }
 
-                            if ui.button("⚙").on_hover_text("Inställningar").clicked() {
-                                self.screen = Screen::Settings;
-                            }
-                        });
-                        ui.horizontal(|ui| {
                             let resp = ui
                                 .add(
                                     egui::DragValue::new(&mut self.max_output)
@@ -460,6 +457,10 @@ impl App {
                                 );
                             if resp.changed() {
                                 save_max_output(self.max_output);
+                            }
+
+                            if ui.button("⚙").on_hover_text("Inställningar").clicked() {
+                                self.screen = Screen::Settings;
                             }
                         });
                     });
@@ -582,8 +583,9 @@ impl App {
             .last_ping_ms
             .map(|v| format!("{v} ms"))
             .unwrap_or_else(|| "–".to_string());
+        // Två korta rader i stället för en hög kolumn, så rutan skymmer mindre av bilden.
         let mut text = format!(
-            "Hastighet: {speed}\nBatteri: {battery}\nVESC: {vesc}\nTemp: {temp}\nPing: {ping}\nVideo: {}",
+            "Hastighet: {speed}   Batteri: {battery}   VESC: {vesc}   Temp: {temp}\nPing: {ping}   Video: {}",
             self.video.status_line()
         );
         if let Some(err) = status.and_then(|s| s.last_error.as_ref()) {
