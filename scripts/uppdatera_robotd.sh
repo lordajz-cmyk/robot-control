@@ -44,7 +44,11 @@ echo "--- Skriver robotd.service ---"
 sudo tee /etc/systemd/system/robotd.service > /dev/null <<'EOF'
 [Unit]
 Description=robotd - robotens styrtjänst (robotstyrning)
-After=network-online.target car_client.service
+# Inte After=car_client.service: den tjänsten har After=multi-user.target, och
+# robotd (WantedBy=multi-user.target) efter den ger en ordningscirkel där systemd
+# stryker robotds start vid uppstart (hänt på RobAnt 2026-09-23). robotd behöver
+# inte vänta: den ansluter till Car_Client först när en klient kopplar upp sig.
+After=network-online.target
 Wants=network-online.target
 
 [Service]

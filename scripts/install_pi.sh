@@ -134,12 +134,12 @@ echo "--- Installerar (men aktiverar inte) systemd-tjänst ---"
 sudo tee /etc/systemd/system/robotd.service > /dev/null <<'EOF'
 [Unit]
 Description=robotd - robotens styrtjänst
-After=network-online.target car_client.service
+# Inte After=car_client.service: den tjänsten har After=multi-user.target, och
+# robotd (WantedBy=multi-user.target) efter den ger en ordningscirkel där systemd
+# stryker robotds start vid uppstart (hänt på RobAnt 2026-09-23). robotd behöver
+# inte vänta: den ansluter till Car_Client först när en klient kopplar upp sig.
+After=network-online.target
 Wants=network-online.target
-# car_client.service kommer från er ANDRA installation (lordajz-cmyk/rise_sdvp,
-# install_pi.sh/install_allt.sh) — bekräftat tjänstenamn 2026-09-20. "After"
-# här kräver INTE att den tjänsten finns (systemd ignorerar tyst om den
-# saknas), men ger rätt startordning om/när den finns.
 
 [Service]
 # Ingen fast startfördröjning behövs: robotd väntar själv på WireGuard-adressen
