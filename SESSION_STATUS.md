@@ -1,3 +1,38 @@
+# Var vi slutade — 2026-09-23, eftermiddag: VÅRT EGET PROGRAM KÖR ROBOTEN! 🎉
+
+Klient (robotstyrning) → WireGuard → robotd → Car_Client → styrkort → VESC.
+Verifierat av användaren på upphissade RobAnt: skanning visar 28/36/76 som
+svarande, dosan kör fram/bak/styr med max 0,45 (samma känsla som RControlStation).
+
+## Hur det fungerar
+- robotd skickar samma kommando som RControlStation: `CMD_RC_CONTROL_ADV` (125),
+  aktivitet 10 = fart, 11 = styrning, värde = spak × max (config `drive`).
+  Omsändning var 100 ms vid körning, 0 direkt vid stopp, 0 var 1 s i vila.
+- **Car_Client tar bara EN TCP-klient** (`tcpserversimple.cpp:139`). robotd och
+  RControlStation kan alltså inte vara anslutna samtidigt — stäng den ena först.
+- Spakar som i RControlStation: vänster upp/ner = gas, höger sidled = styrning.
+- robotd loggar "Körning: …" en gång per sekund och watchdog-övergångar.
+- `/etc/robotd/config.json` på Pi:n har `"drive": {"speed_max": 0.45, "steering_max": 0.45}`
+  (ändrat för hand med sudo; standard i koden är nu också 0.45).
+
+## Så testar man (robotd.service är fortfarande AV)
+1. Stäng RControlStation (Car_Client tar bara en klient).
+2. Robotd-terminalen: `ssh -t robant@192.168.200.10 'timeout -s INT 600 ~/robot-control/target/release/robotd'`
+   (`-t` krävs, annars blir robotd kvar på Pi:n när man trycker Ctrl+C).
+3. `~/Hämtningar/robot-control/target/release/robotstyrning`, anslut 192.168.200.10, AKTIVERA.
+Uppdatera Pi:n: rsync + `cargo build --release -p robotd` (se historiken), ingen install_pi.sh
+(den slår på I2C — fråga först).
+
+## Kvar
+- Status till klienten (batteri, fart, VESC-svar) — robotd skickar ingen StatusUpdate än.
+  AKTIVERA:s VESC-krav är fortfarande en platshållare (`can_activate`, vesc_ok = true).
+- Reglage för max i klienten, så man slipper ändra config.json + starta om robotd.
+- Firmware skriver fortfarande "Activity %d -> %d actuator(s)" per kommando (commands.c).
+- Aktivera robotd.service först när allt ovan är på plats (fråga användaren).
+- Inget pushat till GitHub (robot-control) — bara lokala commits.
+
+---
+
 # Var vi slutade — 2026-09-23, förmiddag: ROBOTEN KÖR! 🎉
 
 Läs den här först nästa gång. (Gårdagens anteckningar ligger kvar längre ner.)
