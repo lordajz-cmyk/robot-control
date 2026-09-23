@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# ny_robot.sh — körs på DATORN. Installerar robotd på en robots Pi och slår på
-# den som tjänst: frågar efter namn, WireGuard-IP m.m., skickar över koden,
-# kör scripts/install_pi.sh och scripts/uppdatera_robotd.sh --aktivera där.
+# ny_robot.sh — körs på DATORN. Gör en robots Pi klar: frågar efter namn,
+# WireGuard-IP m.m., skickar över koden och installerar det som behövs:
+#   1. WireGuard (valfritt)              wireguard/wireguard.sh
+#   2. Grundsystemet (valfritt):         rise_sdvp/install_car_client.sh
+#      Car_Client, Swepos-RTK, udev-regler, flashverktyg
+#   3. robotd som tjänst                 scripts/install_pi.sh + uppdatera_robotd.sh
 #
 #   bash scripts/ny_robot.sh
 #
-# Förutsättningar på Pi:n: Raspberry Pi OS, WireGuard uppsatt (robotens fasta
-# 192.168.200.x-adress) och rise_sdvp-installationen (Car_Client) — robotd
-# bygger ovanpå Car_Client. Går att köra om; befintlig config skrivs bara
-# över om du svarar ja (den gamla sparas som .bak).
+# Förutsättning: Raspberry Pi OS med SSH påslaget. Se installationsguide.md.
+# Går att köra om; befintlig config skrivs bara över om du svarar ja (den
+# gamla sparas som .bak).
 #
 # Senare uppdateringar av robotd: bash scripts/skicka_robotd.sh (med PI=...).
 
@@ -42,6 +44,8 @@ while true; do
   echo -e "${RED}Det ser inte ut som en IP-adress, försök igen.${NC}"
 done
 
+fraga "Adress att nå Pi:n på just nu (ny Pi utan WireGuard: t.ex. raspberrypi.local eller LAN-IP)" "$IP"
+NU_ADR="$SVAR"
 fraga "Användarnamn på Pi:n" "$NAMN"
 ANV="$SVAR"
 fraga "Bil-ID i Car_Client (--setid)" "4"
@@ -52,8 +56,12 @@ fraga "Max vid fullt spakutslag (som Max i RControlStation)" "0.45"
 DRIVE_MAX="$SVAR"
 fraga "Slå på I2C för OLED-skärmen? Kräver omstart av Pi:n senare (j/n)" "n"
 I2C="$SVAR"
+fraga "Installera WireGuard på Pi:n nu? (j/n)" "n"
+WG="$SVAR"
+fraga "Installera grundsystemet (Car_Client, Swepos-RTK, udev)? Behövs på en ny Pi (j/n)" "j"
+GRUND="$SVAR"
 
-PI="${ANV}@${IP}"
+PI="${ANV}@${NU_ADR}"
 echo
 echo -e "${GREEN}--- Sammanfattning ---${NC}"
 echo "  Robot:      $NAMN"
@@ -63,6 +71,7 @@ echo "  Bil-ID:     $CAR_ID"
 echo "  VESC:       $VESC_IDS"
 echo "  Max:        $DRIVE_MAX"
 echo "  I2C/OLED:   $I2C"
+echo "  WireGuard:  $WG     Grundsystem: $GRUND"
 echo "  Startar automatiskt vid uppstart, tar Car_Client bara medan någon kör"
 echo "  med robotstyrning (RControlStation fungerar som vanligt annars)."
 echo
@@ -80,9 +89,15 @@ if ! ssh -o BatchMode=yes -o ConnectTimeout=8 "$PI" true 2>/dev/null; then
   ssh -o ConnectTimeout=8 "$PI" true || { echo -e "${RED}Når inte $PI — är WireGuard uppe på båda?${NC}"; exit 1; }
 fi
 
-if ! ssh "$PI" 'systemctl is-active --quiet car_client.service'; then
-  echo -e "${YELLOW}Varning: car_client.service kör inte på Pi:n. robotd installeras ändå,"
-  echo -e "men kan inte köra roboten förrän rise_sdvp-installationen (Car_Client) är på plats.${NC}"
+if [ "$GRUND" = "j" ] && ssh "$PI" 'systemctl is-active --quiet car_client.service'; then
+  echo -e "${YELLOW}Car_Client kör redan på Pi:n. Grundsystemet installeras om från robot-control"
+  echo -e "(Car_Client byggs från rise_sdvp/ här och car_client.service pekar dit efteråt).${NC}"
+  read -r -p "Fortsätta med grundsystemet ändå? [j/N] " G
+  [ "${G:-n}" = "j" ] || GRUND="n"
+fi
+if [ "$GRUND" != "j" ] && ! ssh "$PI" 'systemctl is-active --quiet car_client.service'; then
+  echo -e "${YELLOW}Varning: car_client.service kör inte på Pi:n. robotd installeras ändå, men kan"
+  echo -e "inte köra roboten förrän grundsystemet är installerat (kör om och svara j).${NC}"
 fi
 
 SKRIV_OVER=0
@@ -100,7 +115,19 @@ rsync -a --exclude target --exclude .git --exclude osm_tiles --exclude '*.png' .
 SKIPPA_I2C=1
 [ "$I2C" = "j" ] && SKIPPA_I2C=0
 
-echo -e "${GREEN}--- Installerar på Pi:n (frågar efter sudo-lösenordet) ---${NC}"
+if [ "$WG" = "j" ]; then
+  echo -e "${GREEN}--- WireGuard (svara på frågorna; sista siffran i ${IP} är VPN-adressen) ---${NC}"
+  ssh -t "$PI" "cd robot-control/wireguard && sudo ./wireguard.sh"
+  echo -e "${YELLOW}Kom ihåg: lägg till Pi:ns publika nyckel på VPN-servern (wireguard_admin.sh),"
+  echo -e "se wireguard/Wireguard_Guide.md.${NC}"
+fi
+
+if [ "$GRUND" = "j" ]; then
+  echo -e "${GREEN}--- Grundsystemet: Car_Client, Swepos-RTK, udev (frågar efter Swepos-konto) ---${NC}"
+  ssh -t "$PI" "cd robot-control/rise_sdvp && sudo CAR_ID='$CAR_ID' ./install_car_client.sh"
+fi
+
+echo -e "${GREEN}--- Installerar robotd (frågar efter sudo-lösenordet) ---${NC}"
 ssh -t "$PI" "cd robot-control && \
   ROBOT_ID='$NAMN' BIND_ADDR='${IP}:9000' CAR_ID='$CAR_ID' VESC_IDS='$VESC_IDS' \
   DRIVE_MAX='$DRIVE_MAX' SKRIV_OVER_CONFIG='$SKRIV_OVER' SKIPPA_I2C='$SKIPPA_I2C' \
@@ -118,5 +145,6 @@ fi
 echo
 echo -e "${GREEN}=== Klart: $NAMN ===${NC}"
 echo "Anslut med robotstyrning till: $NAMN  (eller $IP)"
-echo "Logg på roboten:    ssh $PI journalctl -u robotd -f"
-echo "Uppdatera senare:   PI=$PI bash scripts/skicka_robotd.sh"
+echo "Logg på roboten:    ssh ${ANV}@${IP} journalctl -u robotd -f"
+echo "Uppdatera senare:   PI=${ANV}@${IP} bash scripts/skicka_robotd.sh"
+echo "Flasha styrkortet:  på Pi:n: cd robot-control && ./flash_styrkort.sh"

@@ -1,34 +1,52 @@
-# Var vi slutade — 2026-09-23, eftermiddag: VÅRT EGET PROGRAM KÖR ROBOTEN! 🎉
+# Var vi slutade — 2026-09-23, eftermiddag: VÅRT EGET PROGRAM KÖR ROBOTEN 🎉
 
-Klient (robotstyrning) → WireGuard → robotd → Car_Client → styrkort → VESC.
-Verifierat av användaren på upphissade RobAnt: skanning visar 28/36/76 som
-svarande, dosan kör fram/bak/styr med max 0,45 (samma känsla som RControlStation).
+Läs den här först. Installation: se **installationsguide.md**.
 
-## Hur det fungerar
-- robotd skickar samma kommando som RControlStation: `CMD_RC_CONTROL_ADV` (125),
-  aktivitet 10 = fart, 11 = styrning, värde = spak × max (config `drive`).
-  Omsändning var 100 ms vid körning, 0 direkt vid stopp, 0 var 1 s i vila.
-- **Car_Client tar bara EN TCP-klient** (`tcpserversimple.cpp:139`). robotd och
-  RControlStation kan alltså inte vara anslutna samtidigt — stäng den ena först.
-- Spakar som i RControlStation: vänster upp/ner = gas, höger sidled = styrning.
-- robotd loggar "Körning: …" en gång per sekund och watchdog-övergångar.
-- `/etc/robotd/config.json` på Pi:n har `"drive": {"speed_max": 0.45, "steering_max": 0.45}`
-  (ändrat för hand med sudo; standard i koden är nu också 0.45).
+## Läget
+Klient (robotstyrning) → WireGuard → robotd → Car_Client → styrkort → VESC fungerar på
+upphissade RobAnt, verifierat av användaren ("DET FUNKAR!", max 0,45 känns som RControlStation).
+- **robotd kör som tjänst** på RobAnt (`robotd.service` enabled/active, /usr/local/bin/robotd,
+  installerad 13:20 med `scripts/skicka_robotd.sh --aktivera`).
+- **robotd tar Car_Client bara medan en klient är ansluten** och släpper den efteråt —
+  bekräftat i journalen 13:28:15 (tog) / 13:29:00 (släppte). RControlStation fungerar alltså
+  som vanligt när ingen kör med robotstyrning. Car_Client tar bara EN TCP-klient
+  (`tcpserversimple.cpp:139`), därför är det så.
+- Status i klienten (ljusgrön text på mörk botten): fart, batteri V/%, VESC x/y svarar, temp,
+  fel. Kommer från `CMD_GET_STATE` + `CMD_GET_VESC_STATUS` var 500 ms.
+- AKTIVERA kräver på riktigt att alla `known_vesc_ids` svarar (+ kamera i CAM-läge) och
+  visar orsaken under knappen.
+- Max-reglage i klienten (0,05–1,00, sparas i ~/.config/robotstyrning/max.json), skickas som
+  `ControlCommand.max_output`; robotd begränsar till `drive.max_cap` (standard 1,0).
+- Spakar som RControlStation: vänster upp/ner = gas, höger sidled = styrning.
 
-## Så testar man (robotd.service är fortfarande AV)
-1. Stäng RControlStation (Car_Client tar bara en klient).
-2. Robotd-terminalen: `ssh -t robant@192.168.200.10 'timeout -s INT 600 ~/robot-control/target/release/robotd'`
-   (`-t` krävs, annars blir robotd kvar på Pi:n när man trycker Ctrl+C).
-3. `~/Hämtningar/robot-control/target/release/robotstyrning`, anslut 192.168.200.10, AKTIVERA.
-Uppdatera Pi:n: rsync + `cargo build --release -p robotd` (se historiken), ingen install_pi.sh
-(den slår på I2C — fråga först).
+## Hur robotd styr
+`CMD_RC_CONTROL_ADV` (125): `[bil-ID][125][aktivitet][värde*1e4 i32 BE]`, aktivitet 10 = fart,
+11 = styrning; styrkortet väljer VESC via sina aktuatorer (Confcommon). Omsändning var 100 ms
+vid körning, 0 direkt vid stopp, 0 var 1 s i vila. Watchdog 150/400 ms, ramper, AKTIVERA krävs.
+
+## Repot är fristående (2026-09-23)
+- `rise_sdvp/`: Car_Client, styrkortets firmware (RC_Controller) och udev-regler kopierade från
+  rise_sdvp commit 1b55ca6 + `install_car_client.sh` (rise_sdvp:s install_pi.sh anpassad).
+  Provbyggt: firmware `make robant` och Car_Client (qmake6) OK. Håll i synk, se rise_sdvp/README.md.
+- `wireguard/`: wireguard.sh, wireguard_admin.sh och guiderna.
+- `reference/rise_sdvp` borttagen (inaktuella kopior).
+- `scripts/ny_robot.sh` (ny robot, frågar namn/IP/…), `skicka_robotd.sh` (uppdatera),
+  `uppdatera_robotd.sh` (körs på Pi:n). `ny_robot.sh` är INTE körd mot en riktig ny Pi än.
+
+## Rutiner
+- Starta robotd för hand bara med `ssh -t` (annars blir den kvar). Nu när tjänsten kör: stoppa
+  tjänsten först, annars krockar port 9000.
+- sudo på Pi:n kräver lösenord → användaren kör sådant i en egen terminal (inte `!`).
+- Claude Code blockerar SSH-skrivningar mot Pi:n; läsning (journalctl, cat, ss) går.
 
 ## Kvar
-- Status till klienten (batteri, fart, VESC-svar) — robotd skickar ingen StatusUpdate än.
-  AKTIVERA:s VESC-krav är fortfarande en platshållare (`can_activate`, vesc_ok = true).
-- Reglage för max i klienten, så man slipper ändra config.json + starta om robotd.
-- Firmware skriver fortfarande "Activity %d -> %d actuator(s)" per kommando (commands.c).
-- Aktivera robotd.service först när allt ovan är på plats (fråga användaren).
+- Aktuatorinställningar för ett NYTT styrkort görs bara i RControlStation (Confcommon → Write).
+  Borde in i robotstyrning om robotar ska installeras utan RControlStation.
+- Firmware skriver "Activity %d -> %d actuator(s)" per kommando (commands.c) — tysta.
+- `gps_fix` i status är alltid false (ingen NMEA-tolkning, medvetet, se PROJECT_SPEC §10).
+- Settings-vyn: när den visas skickas inga styrkommandon (draw_driving_screen körs inte) →
+  watchdog nollar. Ofarligt men värt att veta.
+- `ny_robot.sh` första riktiga körning på en ny Pi — läs utskriften noga.
 - Inget pushat till GitHub (robot-control) — bara lokala commits.
 
 ---

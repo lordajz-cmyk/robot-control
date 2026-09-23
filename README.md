@@ -31,23 +31,19 @@ läser äldre avsnitt som pratar om en reläserver (skrotad, se §14).
   komplicerade reläserver-lösningen (Ed25519-parkoppling m.m.) som byttes
   ut mot WireGuard. Ligger kvar bara som referens.
 
-## Installation med skript
+## Installation
 
-- `scripts/install_pi.sh` — körs PÅ Raspberry Pi:n: installerar systempaket,
-  Rust, bygger `robotd`/`robotctl`, lägger dem i `/usr/local/bin`, skapar
-  `/etc/robotd/config.json` (med `bind_addr` — sätt den till robotens
-  WireGuard-IP + port), installerar (men aktiverar inte) en systemd-tjänst.
-- `scripts/deploy_to_pi.sh <användare@pi-adress>` — körs på ER dator:
-  kopierar projektet till Pi:n via rsync/scp och kör `install_pi.sh` där
-  över SSH i ett steg.
-- `scripts/install_client.sh` — körs på styrdatorn (Ubuntu): installerar
-  systempaket, Rust, bygger klienten + mock-robotd, lägger dem i
-  `~/.local/bin`, skapar en skrivbordsgenväg för klienten.
+Se **[installationsguide.md](installationsguide.md)**. Repot är fristående:
+Car_Client, styrkortets firmware och WireGuard-skripten ligger med
+(`rise_sdvp/`, `wireguard/`), så rise_sdvp behöver inte klonas.
 
-Alla tre är skrivna nu, innan riktig hårdvara finns tillgänglig — de är
-väntade att fungera men otestade i praktiken. Första gången ni kör dem,
-kör dem manuellt och läs igenom vad som skrivs ut, snarare än att lita
-blint på att allt går perfekt första gången.
+- `scripts/ny_robot.sh` (datorn): gör en ny robots Pi klar (WireGuard,
+  grundsystem med Car_Client/RTK, robotd som tjänst).
+- `scripts/skicka_robotd.sh` (datorn): uppdatera robotd på en robot.
+- `scripts/install_client.sh` (datorn): bygg och installera robotstyrning.
+- `flash_styrkort.sh` (Pi:n): bygg och flasha styrkortets firmware.
+- `scripts/install_pi.sh`, `scripts/uppdatera_robotd.sh`,
+  `rise_sdvp/install_car_client.sh`: körs på Pi:n av skripten ovan.
 
 ## Testköra hela systemet utan hårdvara
 

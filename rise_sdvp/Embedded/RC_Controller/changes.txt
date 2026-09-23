@@ -1,0 +1,327 @@
+diff --git a/Embedded/RC_Controller/conf_general.h b/Embedded/RC_Controller/conf_general.h
+index 90d01e39..91e62262 100644
+--- a/Embedded/RC_Controller/conf_general.h
++++ b/Embedded/RC_Controller/conf_general.h
+@@ -64,10 +64,8 @@
+ #define SERVO_VESC_S2				240.0 // Right
+ #define USE_ADCONV_FOR_VIN
+ #define SERVO_VESC_HYDRAULIC
+-#define HYDRAULIC_HAS_SPEED_SENSOR
+ #define SERVO_VESC_ID				0
+ #define SERVO_VESC_INVERTED			0
+-//#define SERVO_VESC_DEADBAND_COMP    0.2
+ #define IS_F9_BOARD					1
+ #define SERVO_WRITE
+ #define SERVO_READ
+@@ -80,7 +78,6 @@
+ 
+ 
+ #ifdef IS_DRANGEN
+-//#define HAS_HYDRAULIC_DRIVE			1
+ #define VESC_LEFT 28
+ #define VESC_RIGHT 36
+ #define DIFF_STEERING 16
+@@ -91,9 +88,7 @@
+ #define SERVO_VESC_S2				237.7 // Right
+ #define USE_ADCONV_FOR_VIN
+ #define SERVO_VESC_HYDRAULIC
+-#define HYDRAULIC_HAS_SPEED_SENSOR
+ #define SERVO_VESC_INVERTED			0
+-#define SERVO_VESC_DEADBAND_COMP    0.2
+ #define IS_F9_BOARD					1
+ #define IS_ALL_ELECTRIC             1
+ #define ANALOG_ANGLE
+@@ -145,15 +140,6 @@
+ #ifndef SERVO_VESC_S2
+ #define SERVO_VESC_S2				30.0
+ #endif
+-#ifndef SERVO_VESC_P_GAIN
+-#define SERVO_VESC_P_GAIN			2.0
+-#endif
+-#ifndef SERVO_VESC_I_GAIN
+-#define SERVO_VESC_I_GAIN			1.0
+-#endif
+-#ifndef SERVO_VESC_D_GAIN
+-#define SERVO_VESC_D_GAIN			0.1
+-#endif
+ #ifndef SERVO_VESC_D_FILTER
+ #define SERVO_VESC_D_FILTER			0.05
+ #endif
+@@ -163,9 +149,6 @@
+ #ifndef SERVO_VESC_ANGLE_INVERTED
+ #define SERVO_VESC_ANGLE_INVERTED	0
+ #endif
+-#ifndef SERVO_VESC_DEADBAND_COMP
+-#define SERVO_VESC_DEADBAND_COMP	0.0 // Range 0 - 1
+-#endif
+ 
+ // Ublox settings
+ #ifndef UBLOX_EN
+diff --git a/Embedded/RC_Controller/hydraulic.c b/Embedded/RC_Controller/hydraulic.c
+index 98661ab2..fbf0585e 100644
+--- a/Embedded/RC_Controller/hydraulic.c
++++ b/Embedded/RC_Controller/hydraulic.c
+@@ -144,7 +144,7 @@ void hydraulic_set_speed(float speed) {
+ 
+ 		// TODO: Update this
+ 		m_throttle_set = SIGN(speed) * throttle_val;
+-#ifndef HYDRAULIC_HAS_SPEED_SENSOR
++#ifndef WHEEL_SENSOR
+ 		m_speed_now = SIGN(speed) * SPEED_M_S;
+ #endif
+ 	}
+diff --git a/Embedded/RC_Controller/main.c b/Embedded/RC_Controller/main.c
+index cfe44d01..99e11b7c 100644
+--- a/Embedded/RC_Controller/main.c
++++ b/Embedded/RC_Controller/main.c
+@@ -110,7 +110,6 @@ int main(void) {
+ #endif
+ #if WHEEL_SENSOR
+ 	hydraulic_init();
+-	tach_input_init();
+ 	wheelspeed_init();
+ #endif
+ #if HAS_PWM_ESC
+diff --git a/Embedded/RC_Controller/pwm_esc.c b/Embedded/RC_Controller/pwm_esc.c
+index 8ecc581f..ecd759c0 100644
+--- a/Embedded/RC_Controller/pwm_esc.c
++++ b/Embedded/RC_Controller/pwm_esc.c
+@@ -38,21 +38,6 @@
+ //extern ADC_CNT_t io_board_adc0_cnt;
+ 
+ 
+-
+-
+-#ifdef SERVO_READ
+-//#include <time.h> // For time functions
+-#define TACHO_INPUT_PORT      GPIOA
+-ADC_CNT_t io_board_adc0_cnt = {1};
+-systime_t last_reading_time = 0;
+-static volatile uint32_t timer_overflow_count = 0; // antal overflow
+-static volatile uint32_t last_capture = 0;         // 32-bitars senaste capture
+-static systime_t last_tick = 0;
+-//extern float time_last;
+-
+-
+-#endif
+-
+ extern int iDebug;
+ 
+ 
+@@ -78,15 +63,6 @@ extern int iDebug;
+ #define SERVO4_PIN				6
+ #endif
+ 
+-
+-#ifndef CORTEX_PRIORITY_BITS
+-#define CORTEX_PRIORITY_BITS 4
+-#endif
+-
+-#ifndef CORTEX_PRIORITY_MASK
+-#define CORTEX_PRIORITY_MASK(n) ((n) << (8 - CORTEX_PRIORITY_BITS))
+-#endif
+-
+ static PWMConfig pwmcfg3 = {
+ 		TIM_CLOCK,
+ 		(uint16_t)((uint32_t)TIM_CLOCK / (uint32_t)ESC_UPDATE_RATE),
+@@ -145,9 +121,6 @@ void pwm_esc_init(void) {
+ 
+ 	pwm_esc_set_all(0);
+ #endif
+-#ifdef SERVO_READ
+-	tach_input_init();
+-#endif
+ }
+ 
+ void pwm_esc_set_all(float pulse_width) {
+@@ -196,78 +169,3 @@ void pwm_esc_set(uint8_t channel, float pulse_width) {
+ 		break;
+ 	}
+ }
+-
+-void tach_input_init(void) {
+-
+-    // Enable TIM2 clock
+-    rccEnableTIM2(TRUE);
+-
+-    // Configure PA2 as TIM2_CH3 (AF1)
+-    palSetPadMode(TACHO_INPUT_PORT, 2, PAL_MODE_ALTERNATE(1));
+-
+-    // Timer configuration
+-    TIM2->PSC = 840 - 1;        // 84 MHz / 84 = 1 MHz → 1 µs per count
+-    TIM2->ARR = 0xFFFF;        // Max period
+-    TIM2->CCMR2 &= ~TIM_CCMR2_CC3S;
+-    TIM2->CCMR2 |= TIM_CCMR2_CC3S_0;  // CC3 input, map to TI3
+-    TIM2->CCER &= ~TIM_CCER_CC3P;     // Rising edge (clear bit for rising edge)
+-    TIM2->CCER |= TIM_CCER_CC3E;      // Enable input capture
+-    
+-    // Try capturing falling edges instead
+-    // TIM2->CCER |= TIM_CCER_CC3P;  // Uncomment to capture falling edge
+-
+-    // Enable interrupt on CC3 match
+-    TIM2->DIER |= TIM_DIER_CC3IE;
+-    TIM2->CR1 |= TIM_CR1_CEN;         // Start the timer
+-
+-    // Enable TIM2 IRQ in NVIC
+-    nvicEnableVector(STM32_TIM2_NUMBER, CORTEX_PRIORITY_MASK(7));
+-
+-    last_capture = 0;
+-
+-    // Initialize the state machine for the first pulse
+-    io_board_adc0_cnt.is_high = false;
+-    io_board_adc0_cnt.high_time_last = 0.0f;
+-    io_board_adc0_cnt.high_time_current = 0.0f;
+-    io_board_adc0_cnt.low_time_last = 0.0f;
+-    io_board_adc0_cnt.low_time_current = 0.0f;
+-    io_board_adc0_cnt.toggle_high_cnt = 0;
+-    io_board_adc0_cnt.toggle_low_cnt = 0;
+-
+-    // Debug: Print initialization complete
+-    commands_printf("Tachometer input initialized\n");
+-    commands_printf("TIM2->CCER = 0x%08X\n", TIM2->CCER);
+-    commands_printf("TIM2->DIER = 0x%08X\n", TIM2->DIER);
+-}
+-
+-CH_IRQ_HANDLER(STM32_TIM2_HANDLER) {
+-    CH_IRQ_PROLOGUE();
+-    if (TIM2->SR & TIM_SR_UIF) {
+-        TIM2->SR &= ~TIM_SR_UIF; // rensa flagga
+-        timer_overflow_count++;
+-    }
+-
+-    if (TIM2->SR & TIM_SR_CC3IF) {
+-        uint16_t capture16 = TIM2->CCR3;
+-        uint32_t capture32 = ((uint32_t)timer_overflow_count << 16) | capture16;
+-
+-        uint32_t delta = capture32 - last_capture;
+-        last_capture = capture32;
+-
+-        last_reading_time = chVTGetSystemTimeX();
+-
+-        // Simplified: Just measure the time between rising edges (period)
+-        // This is simpler and more reliable than trying to measure both high and low times
+- //       debugvalue2=delta;
+-        float period = 0.00001f * delta;  // Convert to seconds
+-        
+-        // Update speed buffer with the period
+-        // For a square wave, the period is the sum of high and low times
+-        update_speed_buffer(period, 0.0f);
+-        new_pulse = true;  // signalera till tråden
+-
+-        TIM2->SR &= ~TIM_SR_CC3IF;
+-    }
+-
+-    CH_IRQ_EPILOGUE();
+-}
+diff --git a/Embedded/RC_Controller/wheelspeed.c b/Embedded/RC_Controller/wheelspeed.c
+index 3fceb67c..c0a5df95 100644
+--- a/Embedded/RC_Controller/wheelspeed.c
++++ b/Embedded/RC_Controller/wheelspeed.c
+@@ -50,10 +50,69 @@ extern float debugvalue5;
+ 	const float cnts_per_rev = 16.0;
+ #endif
+ 
++#ifndef CORTEX_PRIORITY_BITS
++#define CORTEX_PRIORITY_BITS 4
++#endif
++
++#ifndef CORTEX_PRIORITY_MASK
++#define CORTEX_PRIORITY_MASK(n) ((n) << (8 - CORTEX_PRIORITY_BITS))
++#endif
++
++
++#ifdef SERVO_READ
++//#include <time.h> // For time functions
++#define TACHO_INPUT_PORT      GPIOA
++ADC_CNT_t io_board_adc0_cnt = {1};
++systime_t last_reading_time = 0;
++static volatile uint32_t timer_overflow_count = 0; // antal overflow
++static volatile uint32_t last_capture = 0;         // 32-bitars senaste capture
++static systime_t last_tick = 0;
++//extern float time_last;
++#endif
++
+ static THD_WORKING_AREA(wheelspeed_thread_wa, 1024);
+ static THD_FUNCTION(wheelspeed_thread, arg);
+ 
+ void wheelspeed_init(void) {
++    // Enable TIM2 clock
++    rccEnableTIM2(TRUE);
++
++    // Configure PA2 as TIM2_CH3 (AF1)
++    palSetPadMode(TACHO_INPUT_PORT, 2, PAL_MODE_ALTERNATE(1));
++
++    // Timer configuration
++    TIM2->PSC = 840 - 1;        // 84 MHz / 84 = 1 MHz → 1 µs per count
++    TIM2->ARR = 0xFFFF;        // Max period
++    TIM2->CCMR2 &= ~TIM_CCMR2_CC3S;
++    TIM2->CCMR2 |= TIM_CCMR2_CC3S_0;  // CC3 input, map to TI3
++    TIM2->CCER &= ~TIM_CCER_CC3P;     // Rising edge (clear bit for rising edge)
++    TIM2->CCER |= TIM_CCER_CC3E;      // Enable input capture
++
++    // Try capturing falling edges instead
++    // TIM2->CCER |= TIM_CCER_CC3P;  // Uncomment to capture falling edge
++
++    // Enable interrupt on CC3 match
++    TIM2->DIER |= TIM_DIER_CC3IE;
++    TIM2->CR1 |= TIM_CR1_CEN;         // Start the timer
++
++    // Enable TIM2 IRQ in NVIC
++    nvicEnableVector(STM32_TIM2_NUMBER, CORTEX_PRIORITY_MASK(7));
++
++    last_capture = 0;
++
++    // Initialize the state machine for the first pulse
++    io_board_adc0_cnt.is_high = false;
++    io_board_adc0_cnt.high_time_last = 0.0f;
++    io_board_adc0_cnt.high_time_current = 0.0f;
++    io_board_adc0_cnt.low_time_last = 0.0f;
++    io_board_adc0_cnt.low_time_current = 0.0f;
++    io_board_adc0_cnt.toggle_high_cnt = 0;
++    io_board_adc0_cnt.toggle_low_cnt = 0;
++
++    // Debug: Print initialization complete
++    commands_printf("Tachometer input initialized\n");
++    commands_printf("TIM2->CCER = 0x%08X\n", TIM2->CCER);
++    commands_printf("TIM2->DIER = 0x%08X\n", TIM2->DIER);
+ 
+ 	chThdCreateStatic(wheelspeed_thread_wa, sizeof(wheelspeed_thread_wa), NORMALPRIO, wheelspeed_thread, NULL);
+ }
+@@ -133,6 +192,37 @@ void update_speed_buffer(float period, float unused) {
+     chSysUnlockFromISR();
+ };
+ 
++CH_IRQ_HANDLER(STM32_TIM2_HANDLER) {
++    CH_IRQ_PROLOGUE();
++    if (TIM2->SR & TIM_SR_UIF) {
++        TIM2->SR &= ~TIM_SR_UIF; // rensa flagga
++        timer_overflow_count++;
++    }
++
++    if (TIM2->SR & TIM_SR_CC3IF) {
++        uint16_t capture16 = TIM2->CCR3;
++        uint32_t capture32 = ((uint32_t)timer_overflow_count << 16) | capture16;
++
++        uint32_t delta = capture32 - last_capture;
++        last_capture = capture32;
++
++        last_reading_time = chVTGetSystemTimeX();
++
++        // Simplified: Just measure the time between rising edges (period)
++        // This is simpler and more reliable than trying to measure both high and low times
++ //       debugvalue2=delta;
++        float period = 0.00001f * delta;  // Convert to seconds
++
++        // Update speed buffer with the period
++        // For a square wave, the period is the sum of high and low times
++        update_speed_buffer(period, 0.0f);
++        new_pulse = true;  // signalera till tråden
++
++        TIM2->SR &= ~TIM_SR_CC3IF;
++    }
++
++    CH_IRQ_EPILOGUE();
++}
+ 
+ 
+ static THD_FUNCTION(wheelspeed_thread, arg) {

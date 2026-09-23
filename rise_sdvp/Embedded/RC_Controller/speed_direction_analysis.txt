@@ -1,0 +1,80 @@
+SPEED DIRECTION ANALYSIS
+========================
+
+PROBLEM IDENTIFICATION
+======================
+The wheel speed is always positive because the direction detection logic in wheelspeed.c relies on m_throttle_set, but this variable is not being updated correctly for electric motor operation.
+
+CURRENT FLOW ANALYSIS
+====================
+
+1. **Electric Motor Control Path (DRANGEN):**
+   - commands.c → bldc_interface_set_rpm() or bldc_interface_set_duty_cycle()
+   - autopilot.c → bldc_interface_set_rpm() 
+   - These functions bypass hydraulic_set_speed() and hydraulic_set_throttle_raw()
+   - Therefore m_throttle_set is never updated for electric motor operation
+
+2. **Hydraulic Control Path (MACTRAC):**
+   - commands.c → hydraulic_set_speed() or hydraulic_set_throttle_raw()
+   - These functions properly update m_throttle_set with direction information
+   - This is why direction detection works for hydraulic systems
+
+3. **Speed Calculation in wheelspeed.c:**
+   - Relies on m_throttle_set for direction: SIGN(m_throttle_set)
+   - But m_throttle_set is only updated in hydraulic functions
+   - For electric motors, m_throttle_set remains 0 or stale
+
+KEY FINDINGS
+============
+
+1. **m_throttle_set Usage:**
+   - Defined in hydraulic.c: `volatile float m_throttle_set = 0.0;`
+   - Only updated in hydraulic_set_speed() and hydraulic_set_throttle_raw()
+   - Never updated when using BLDC interface functions
+
+2. **Electric Motor Control:**
+   - Uses bldc_interface_set_rpm(), bldc_interface_set_duty_cycle(), etc.
+   - These functions don't update any global speed/direction variables
+   - Direction is handled internally by VESC controllers
+
+3. **Speed Measurement:**
+   - wheelspeed.c measures pulse period from encoder/sensor
+   - Applies direction based on m_throttle_set
+   - But m_throttle_set doesn't reflect actual motor direction for electric motors
+
+ROOT CAUSE
+==========
+The direction detection logic assumes hydraulic operation where m_throttle_set is explicitly managed. For electric motors using BLDC interface, the direction information is lost because:
+
+1. BLDC interface functions don't update m_throttle_set
+2. Direction is handled at the VESC controller level
+3. The wheel speed calculation has no visibility into the actual motor direction
+
+POSSIBLE SOLUTIONS
+=================
+
+1. **Update m_throttle_set in BLDC Interface:**
+   - Modify bldc_interface functions to update m_throttle_set
+   - Would require access to hydraulic.h or moving m_throttle_set to a common location
+
+2. **Alternative Direction Source:**
+   - Use the actual motor RPM/duty cycle commands as direction reference
+   - Would need to track the last set values in commands.c or autopilot.c
+
+3. **Hardware-Based Direction Detection:**
+   - Use quadrature encoder inputs if available
+   - Requires hardware changes and timer configuration updates
+
+4. **VESC Telemetry:**
+   - Read actual motor direction from VESC telemetry data
+   - Most accurate but requires CAN communication and parsing
+
+RECOMMENDATION
+=============
+The most straightforward fix would be to update m_throttle_set whenever motor commands are sent through the BLDC interface. This would require:
+
+1. Making m_throttle_set accessible to BLDC interface code
+2. Modifying bldc_interface_set_rpm() and bldc_interface_set_duty_cycle() to update m_throttle_set
+3. Ensuring the direction matches the command being sent
+
+This approach maintains the existing architecture while fixing the direction detection issue.

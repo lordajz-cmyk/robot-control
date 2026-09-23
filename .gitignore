@@ -15,3 +15,9 @@ fw_out/
 # Kartbrickor (cache) och tomma terminalloggar
 osm_tiles/
 /20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.txt
+
+# Byggen av den medföljande rise_sdvp-koden (Car_Client, firmware)
+rise_sdvp/Linux/Car_Client/Car_Client
+rise_sdvp/Linux/Car_Client/qrc_*.cpp
+rise_sdvp/Linux/Car_Client/.qmake.stash
+rise_sdvp/Embedded/RC_Controller/.dep/

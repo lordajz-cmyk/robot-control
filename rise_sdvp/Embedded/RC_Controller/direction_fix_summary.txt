@@ -1,0 +1,70 @@
+DIRECTION DETECTION FIX SUMMARY
+===============================
+
+PROBLEM SOLVED
+==============
+Fixed the issue where wheel speed was always positive for electric motors by updating the BLDC interface to properly track motor direction in m_throttle_set.
+
+ROOT CAUSE
+==========
+The wheel speed calculation in wheelspeed.c relied on m_throttle_set for direction detection, but this variable was only updated for hydraulic systems. Electric motor control via BLDC interface bypassed m_throttle_set updates, causing direction information to be lost.
+
+SOLUTION IMPLEMENTED
+====================
+Modified bldc_interface.c to update m_throttle_set whenever motor commands are sent:
+
+1. **Added external declaration:**
+   - Added `extern volatile float m_throttle_set;` to access the throttle variable
+
+2. **Updated bldc_interface_set_duty_cycle():**
+   - Now updates m_throttle_set with the duty cycle value
+   - Directly reflects the commanded direction
+
+3. **Updated bldc_interface_set_current():**
+   - Normalizes current to [-1, 1] range to indicate direction
+   - Handles near-zero values to avoid division by zero
+   - Positive current = forward, negative current = backward
+
+4. **Updated bldc_interface_set_rpm():**
+   - Sets m_throttle_set to 1.0 for positive RPM, -1.0 for negative RPM
+   - Sets to 0.0 when RPM is zero
+
+5. **Updated bldc_interface_set_current_brake():**
+   - Sets m_throttle_set to 0.0 during braking (no directional movement)
+
+FILES MODIFIED
+==============
+- bldc_interface.c: Added direction tracking to all motor control functions
+
+EXPECTED BEHAVIOR
+=================
+- Forward motion: Positive speed values
+- Backward motion: Negative speed values  
+- Stationary/braking: Speed near zero
+- Direction changes: Smooth transitions through zero
+- Initial startup: No more direction detection issues
+
+TECHNICAL DETAILS
+=================
+The fix ensures that m_throttle_set always reflects the intended motor direction:
+- Duty cycle mode: m_throttle_set = duty_cycle (range [-1, 1])
+- Current mode: m_throttle_set = sign(current) (normalized to [-1, 1])
+- RPM mode: m_throttle_set = sign(RPM) (1.0 or -1.0)
+- Brake mode: m_throttle_set = 0.0 (no direction)
+
+This allows wheelspeed.c to correctly determine direction using SIGN(m_throttle_set) for electric motor operation, matching the behavior that already worked for hydraulic systems.
+
+COMPATIBILITY
+=============
+- Maintains full backward compatibility with existing code
+- No changes required to wheelspeed.c or other files
+- Works with all motor control modes (duty, current, RPM)
+- Safe handling of edge cases (zero values, braking)
+
+TESTING RECOMMENDATIONS
+=======================
+1. Test forward motion - should show positive speeds
+2. Test backward motion - should show negative speeds
+3. Test direction changes - should transition smoothly through zero
+4. Test braking - should show speed approaching zero
+5. Test all control modes (duty, current, RPM) if applicable

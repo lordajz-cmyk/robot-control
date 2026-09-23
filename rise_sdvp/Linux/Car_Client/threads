@@ -1,0 +1,16 @@
+20000f58 20000764   64    1  SLEEPING           main 23
+20000fa8 200010b4    1    1     READY           idle 267079
+200141a0 2001463c   64    1  SLEEPING     Servo VESC 1
+200016e0 20001f84   64    1  SLEEPING   BMI Sampling 57523
+20013740 20013a14   64    1  SLEEPING            UWB 0
+2000b270 2000b524   65    1   WTOREVT       CAN read 1300
+2000a0d8 2000b194   64    1   WTOREVT    CAN process 1083
+2000bb20 2000c274   64    1  SLEEPING      Autopilot 0
+2000c4c0 2000c7b4   64    1  SLEEPING        Timeout 0
+2000d788 2000e064   64    1  SLEEPING            Log 0
+2000cdf0 2000d70c   64    1   WTOREVT       Log UART 0
+20012ce8 200135bc   64    1  SLEEPING       MotorSim 0
+20001390 2000150c    2    1     READY   usb_lld_pump 18
+200049f8 20004c4c   64    1    QUEUED USB-Serial read 1
+20003860 2000477c   64    1   CURRENT USB-Serial process 52
+20011b50 20012b64   64    1   WTOREVT  ublox process 570

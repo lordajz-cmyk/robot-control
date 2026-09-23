@@ -1,0 +1,56 @@
+WHEEL SPEED FIX SUMMARY
+=======================
+
+Issues Addressed:
+1. Initial high speed spikes at startup
+2. Positive-only speed readings (no backward detection)
+
+Changes Made:
+=============
+
+1. wheelspeed.c - Added initial spike protection:
+   - Extra validation for the very first pulse measurement
+   - Rejects unrealistically fast (>1000Hz) or slow (<10Hz) initial pulses
+   - More conservative validation during first 2 measurements
+
+2. wheelspeed.c - Added proper direction detection:
+   - Uses throttle setting direction when throttle > 1%
+   - Maintains previous direction when throttle is near zero
+   - Falls back to positive direction when no direction info available
+   - Properly handles electric motor direction changes
+
+3. conf_general.h - Fixed unreasonable ratio limits for DRANGEN:
+   - Changed MAX_RATIO from 999 to 4.0
+   - Changed MIN_RATIO from 0.001 to 0.25
+   - Changed MAX_RATIO_LOWSPEED from 999 to 8.0
+   - Changed MIN_RATIO_LOWSPEED from 0.001 to 0.125
+
+Technical Details:
+=================
+
+The fix works by:
+1. Filtering out initial noise/spikes during startup
+2. Using the motor throttle direction as the speed direction reference
+3. Applying reasonable physical limits to speed changes
+4. Maintaining direction continuity during throttle transitions
+
+Testing Recommendations:
+=======================
+
+1. Test startup behavior - speed should stabilize quickly without spikes
+2. Test forward motion - should show positive speeds
+3. Test backward motion - should show negative speeds
+4. Test direction changes - speed should smoothly transition through zero
+5. Test low-speed behavior - should be stable near zero
+
+Expected Behavior:
+- Initial speed reading should be 0 or very low, then stabilize
+- Forward motion: positive speed values
+- Backward motion: negative speed values
+- Direction changes: smooth transition through zero
+- No more unrealistic speed spikes at startup
+
+If issues persist:
+- Check that m_throttle_set contains proper direction information
+- Verify that the pulse input signal is clean and stable
+- Consider adding hardware filtering if electrical noise is present
