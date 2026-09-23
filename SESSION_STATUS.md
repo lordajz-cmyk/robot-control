@@ -24,6 +24,17 @@ upphissade RobAnt, verifierat av användaren ("DET FUNKAR!", max 0,45 känns som
   skrivning OK, kontrolläst. Styrkortet nu: antal 4; 28/36 Fart, 76 Styrning, rad 4 = VESC 0
   Nödstopp (tidigare VESC 8; ingen sådan VESC finns, ofarlig rest — kan sättas till antal 3).
 - 🔒 Lås-knapp (och Esc) i klienten slår av AKTIVERA.
+- **Uppstart verifierad 2026-09-23 ~15:35, även efter strömavbrott (huvudströmbrytaren):**
+  WireGuard, Car_Client, RTK och robotd startar av sig själva, VESC 3/3, AKTIVERA OK.
+  Två fel hittades och rättades på vägen:
+  1. robotd startade inte vid uppstart: `After=car_client.service` + car_client:s
+     `After=multi-user.target` gav en ordningscirkel, systemd strök robotds start.
+     Rättat i robotd.service (uppdatera_robotd.sh, install_pi.sh).
+  2. Styrkortet svarade inte efter omstart: Car_Client öppnade `/dev/vehicle` en gång till
+     som RTCM-serieport (`inputRtcm = true` i main.cpp) och läste bort styrkortets svar,
+     slumpmässigt beroende på uppstarten. Standard nu `false` (som i Vedders original), i
+     rise_sdvp (lokal commit ffcab51, **ej pushad**, https kräver användarens inlogg),
+     robot-control/rise_sdvp och på RobAnt (ombyggd 15:29).
 
 ## Hur robotd styr
 `CMD_RC_CONTROL_ADV` (125): `[bil-ID][125][aktivitet][värde*1e4 i32 BE]`, aktivitet 10 = fart,
