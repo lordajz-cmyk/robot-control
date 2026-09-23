@@ -18,6 +18,12 @@ upphissade RobAnt, verifierat av användaren ("DET FUNKAR!", max 0,45 känns som
 - Max-reglage i klienten (0,05–1,00, sparas i ~/.config/robotstyrning/max.json), skickas som
   `ControlCommand.max_output`; robotd begränsar till `drive.max_cap` (standard 1,0).
 - Spakar som RControlStation: vänster upp/ner = gas, höger sidled = styrning.
+- **Styrkortets aktuatorer ställs in från robotstyrning** (⚙ → Styrkortets aktuatorer, ersätter
+  Confcommon Read/Write). robotd läser MAIN_CONFIG (78), byter bara aktuatorbytena, skriver (77)
+  och kontrolläser (`robotd/src/board_config.rs`). **Verifierat på RobAnt 13:53:** läsning och
+  skrivning OK, kontrolläst. Styrkortet nu: antal 4; 28/36 Fart, 76 Styrning, rad 4 = VESC 0
+  Nödstopp (tidigare VESC 8; ingen sådan VESC finns, ofarlig rest — kan sättas till antal 3).
+- 🔒 Lås-knapp (och Esc) i klienten slår av AKTIVERA.
 
 ## Hur robotd styr
 `CMD_RC_CONTROL_ADV` (125): `[bil-ID][125][aktivitet][värde*1e4 i32 BE]`, aktivitet 10 = fart,
@@ -40,8 +46,6 @@ vid körning, 0 direkt vid stopp, 0 var 1 s i vila. Watchdog 150/400 ms, ramper,
 - Claude Code blockerar SSH-skrivningar mot Pi:n; läsning (journalctl, cat, ss) går.
 
 ## Kvar
-- Aktuatorinställningar för ett NYTT styrkort görs bara i RControlStation (Confcommon → Write).
-  Borde in i robotstyrning om robotar ska installeras utan RControlStation.
 - Firmware skriver "Activity %d -> %d actuator(s)" per kommando (commands.c) — tysta.
 - `gps_fix` i status är alltid false (ingen NMEA-tolkning, medvetet, se PROJECT_SPEC §10).
 - Settings-vyn: när den visas skickas inga styrkommandon (draw_driving_screen körs inte) →
