@@ -80,7 +80,8 @@ pub struct DriveConfig {
     /// Aktivitet för styrning ("Steering Control" = 11).
     pub steering_activity: u8,
     /// Värde som skickas vid fullt spakutslag. Motsvarar "Max" (throttleMaxBox)
-    /// i RControlStation, som är 0.15 som standard. Hur det tolkas (duty,
+    /// i RControlStation (0.15 där som standard, men 0.45 är vad föraren
+    /// brukar köra med på RobAnt). Hur det tolkas (duty,
     /// ström, rpm) bestäms av aktuatorns läge på kortet.
     pub speed_max: f32,
     pub steering_max: f32,
@@ -94,8 +95,8 @@ impl Default for DriveConfig {
         Self {
             speed_activity: 10,
             steering_activity: 11,
-            speed_max: 0.15,
-            steering_max: 0.15,
+            speed_max: 0.45,
+            steering_max: 0.45,
             invert_speed: false,
             invert_steering: false,
         }

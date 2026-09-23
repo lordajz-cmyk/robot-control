@@ -319,8 +319,8 @@ mod tests {
     fn spakvarden_skalas_och_begransas() {
         let d = config::DriveConfig::default();
         let sp = drive_setpoint(&d, 1.0, -0.5);
-        assert!((sp.speed - 0.15).abs() < 1e-6);
-        assert!((sp.steering + 0.075).abs() < 1e-6);
+        assert!((sp.speed - 0.45).abs() < 1e-6);
+        assert!((sp.steering + 0.225).abs() < 1e-6);
         // Trasig config kan aldrig ge mer än fullt utslag.
         let wild = config::DriveConfig { speed_max: 7.0, steering_max: 7.0, invert_steering: true, ..d };
         let sp = drive_setpoint(&wild, 3.0, 1.0);
