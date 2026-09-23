@@ -105,6 +105,9 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
 
+use relay_protocol::ActuatorConfig;
+
+use crate::board_config;
 use crate::vesc_can::{self, BoardState, VescStatusEntry};
 
 /// Värden som skickas till styrkortet, redan skalade (t.ex. ±0.45).
@@ -146,10 +149,32 @@ const SCAN_TIMEOUT: Duration = Duration::from_secs(3);
 const RECONNECT_DELAY: Duration = Duration::from_secs(3);
 
 pub type ScanReply = oneshot::Sender<Result<Vec<VescStatusEntry>, String>>;
+pub type ConfigReply = oneshot::Sender<Result<ActuatorConfig, String>>;
+
+/// Läs eller skriv styrkortets aktuatorer (se `board_config`).
+pub enum ConfigRequest {
+    Read(ConfigReply),
+    /// Skriv och kontrolläs. Svaret är det som faktiskt står på kortet efteråt.
+    Write(ActuatorConfig, ConfigReply),
+}
+
+impl ConfigRequest {
+    fn fail(self, why: &str) {
+        let reply = match self {
+            ConfigRequest::Read(r) | ConfigRequest::Write(_, r) => r,
+        };
+        let _ = reply.send(Err(why.to_string()));
+    }
+}
+
+const CONFIG_TIMEOUT: Duration = Duration::from_secs(3);
+/// Styrkortet sparar i sitt EEPROM innan det kvitterar — ge det tid.
+const CONFIG_WRITE_TIMEOUT: Duration = Duration::from_secs(8);
 
 pub struct LinkHandle {
     pub setpoint: watch::Sender<DriveSetpoint>,
     pub scan: mpsc::Sender<ScanReply>,
+    pub config: mpsc::Sender<ConfigRequest>,
     pub status: watch::Receiver<LinkStatus>,
     pub telemetry: watch::Receiver<Telemetry>,
 }
@@ -178,19 +203,27 @@ fn should_send(sp: DriveSetpoint, last: Option<(DriveSetpoint, Instant)>, now: I
 pub fn spawn(params: LinkParams, wanted: watch::Receiver<bool>) -> LinkHandle {
     let (setpoint_tx, setpoint_rx) = watch::channel(DriveSetpoint::default());
     let (scan_tx, scan_rx) = mpsc::channel(4);
+    let (config_tx, config_rx) = mpsc::channel(2);
     let (status_tx, status_rx) = watch::channel(LinkStatus::default());
     let (telemetry_tx, telemetry_rx) = watch::channel(Telemetry::default());
     tokio::spawn(run(
         params,
         wanted,
-        Channels { setpoint: setpoint_rx, scans: scan_rx, status: status_tx, telemetry: telemetry_tx },
+        Channels {
+            setpoint: setpoint_rx,
+            scans: scan_rx,
+            config: config_rx,
+            status: status_tx,
+            telemetry: telemetry_tx,
+        },
     ));
-    LinkHandle { setpoint: setpoint_tx, scan: scan_tx, status: status_rx, telemetry: telemetry_rx }
+    LinkHandle { setpoint: setpoint_tx, scan: scan_tx, config: config_tx, status: status_rx, telemetry: telemetry_rx }
 }
 
 struct Channels {
     setpoint: watch::Receiver<DriveSetpoint>,
     scans: mpsc::Receiver<ScanReply>,
+    config: mpsc::Receiver<ConfigRequest>,
     status: watch::Sender<LinkStatus>,
     telemetry: watch::Sender<Telemetry>,
 }
@@ -203,11 +236,12 @@ enum SessionEnd {
 }
 
 /// Väntar `delay`, men avbryter så fort `wanted` ändras (klient kom eller gick)
-/// och svarar skanningar med fel direkt. `false` = huvudloopen är borta.
+/// och svarar skanningar och inställningsfrågor med fel direkt.
+/// `false` = huvudloopen är borta.
 async fn wait_or_release(
     delay: Duration,
     wanted: &mut watch::Receiver<bool>,
-    scans: &mut mpsc::Receiver<ScanReply>,
+    ch: &mut Channels,
     why: &str,
 ) -> bool {
     let wait = tokio::time::sleep(delay);
@@ -218,8 +252,12 @@ async fn wait_or_release(
             changed = wanted.changed() => {
                 return changed.is_ok();
             }
-            req = scans.recv() => match req {
+            req = ch.scans.recv() => match req {
                 Some(reply) => { let _ = reply.send(Err(why.to_string())); }
+                None => return false,
+            },
+            req = ch.config.recv() => match req {
+                Some(req) => req.fail(why),
                 None => return false,
             },
         }
@@ -232,7 +270,7 @@ async fn run(params: LinkParams, mut wanted: watch::Receiver<bool>, mut ch: Chan
         if !*wanted.borrow() {
             ch.status.send_replace(LinkStatus::default());
             // Ingen klient: vänta tills någon ansluter (lång väntan = ingen tidsgräns).
-            if !wait_or_release(Duration::MAX / 4, &mut wanted, &mut ch.scans, "ingen klient ansluten").await {
+            if !wait_or_release(Duration::MAX / 4, &mut wanted, &mut ch, "ingen klient ansluten").await {
                 return;
             }
             continue;
@@ -272,7 +310,7 @@ async fn run(params: LinkParams, mut wanted: watch::Receiver<bool>, mut ch: Chan
             }
         };
         ch.status.send_replace(LinkStatus { connected: false, error: Some(error.clone()) });
-        if !wait_or_release(RECONNECT_DELAY, &mut wanted, &mut ch.scans, &error).await {
+        if !wait_or_release(RECONNECT_DELAY, &mut wanted, &mut ch, &error).await {
             return;
         }
     }
@@ -320,6 +358,13 @@ async fn session(
                 link.send_raw_payload(&vesc_can::make_vesc_status_request(p.car_id)).await?;
                 pending_scan = Some((reply, Instant::now() + SCAN_TIMEOUT));
             }
+            req = ch.config.recv() => {
+                let Some(req) = req else { return Ok(SessionEnd::MainGone) };
+                // Tar upp till några sekunder; styrvärden skickas inte under tiden,
+                // därför tillåter huvudloopen bara detta när roboten står stilla.
+                handle_config(&mut link, p.car_id, req).await?;
+                last_sent = None; // skicka aktuellt (noll-)värde direkt efteråt
+            }
             packets = link.poll_packets() => {
                 for pkt in packets? {
                     if let Some(entries) = vesc_can::parse_vesc_status_reply(&pkt) {
@@ -352,6 +397,75 @@ async fn session(
             last_sent = Some((sp, now));
         }
     }
+}
+
+/// Skickar `request` och väntar på det första paket som `want` känner igen.
+/// Andra paket (status, utskrifter) under tiden hoppas över.
+async fn request<T>(
+    link: &mut CarClientLink,
+    request: &[u8],
+    timeout: Duration,
+    what: &str,
+    mut want: impl FnMut(&[u8]) -> Option<T>,
+) -> Result<Result<T, String>, String> {
+    link.send_raw_payload(request).await?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let Ok(packets) = tokio::time::timeout(left, link.poll_packets()).await else {
+            return Ok(Err(format!("inget svar från styrkortet på {what} inom {timeout:?}")));
+        };
+        for pkt in packets? {
+            if let Some(t) = want(&pkt) {
+                return Ok(Ok(t));
+            }
+        }
+    }
+}
+
+async fn read_config(link: &mut CarClientLink, car_id: u8) -> Result<Result<(Vec<u8>, ActuatorConfig), String>, String> {
+    let r = request(link, &board_config::make_read_request(car_id), CONFIG_TIMEOUT, "läsning av inställningarna", |p| {
+        board_config::parse_read_reply(p)
+    })
+    .await?;
+    Ok(r.and_then(|inner| inner))
+}
+
+/// Läser, eller läser–ändrar–skriver–kontrolläser, styrkortets aktuatorer.
+/// Yttre `Err` = länken bröts; fel i själva operationen går till svaret.
+async fn handle_config(link: &mut CarClientLink, car_id: u8, req: ConfigRequest) -> Result<(), String> {
+    match req {
+        ConfigRequest::Read(reply) => {
+            let r = read_config(link, car_id).await?.map(|(_, cfg)| cfg);
+            let _ = reply.send(r);
+        }
+        ConfigRequest::Write(wanted, reply) => {
+            let result = async {
+                let (body, before) = read_config(link, car_id).await??;
+                let write = board_config::make_write_request(car_id, &body, &wanted)?;
+                tracing::info!("Skriver aktuatorer till styrkortet: {before:?} -> {wanted:?}");
+                request(link, &write, CONFIG_WRITE_TIMEOUT, "skrivningen", |p| {
+                    board_config::is_write_ack(p).then_some(())
+                })
+                .await??;
+                let (_, after) = read_config(link, car_id).await??;
+                if after == wanted {
+                    tracing::info!("Aktuatorerna skrivna och kontrollästa.");
+                    Ok(after)
+                } else {
+                    Err(format!(
+                        "styrkortet kvitterade men visar något annat efteråt: {after:?}"
+                    ))
+                }
+            }
+            .await;
+            if let Err(e) = &result {
+                tracing::warn!("Skrivning av aktuatorer misslyckades: {e}");
+            }
+            let _ = reply.send(result);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -503,6 +617,78 @@ mod tests {
         assert_eq!(last, vesc_can::make_rc_control_adv(4, 11, 0.0));
         let mut rx = h.status.clone();
         tokio::time::timeout(Duration::from_secs(1), rx.wait_for(|s| !s.connected)).await.unwrap().unwrap();
+    }
+
+    /// Läs–ändra–skriv–kontrolläs mot en falsk Car_Client som håller
+    /// styrkortets inställning i minnet och svarar som firmware.
+    #[tokio::test]
+    async fn aktuatorer_skrivs_och_kontrollases() {
+        use relay_protocol::ActuatorSlot;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (_wanted_tx, wanted) = watch::channel(true);
+        let h = spawn(params(listener.local_addr().unwrap()), wanted);
+        let (mut sock, _) = listener.accept().await.unwrap();
+
+        let original = board_config::fake_body("log", &[(0, 28, 10, 0), (0, 36, 10, 0), (0, 76, 11, 0), (0, 0, 0, 0)], 3);
+        let fake_board = tokio::spawn(async move {
+            let mut stored = original.clone();
+            let mut buf = Vec::new();
+            loop {
+                let mut tmp = [0u8; 1024];
+                let k = sock.read(&mut tmp).await.unwrap();
+                if k == 0 {
+                    return (original, stored);
+                }
+                buf.extend_from_slice(&tmp[..k]);
+                while let Ok((p, used)) = try_decode_packet(&buf) {
+                    buf.drain(..used);
+                    match p[1] {
+                        board_config::CMD_GET_MAIN_CONFIG => {
+                            let mut r = vec![4, board_config::CMD_GET_MAIN_CONFIG];
+                            r.extend(&stored);
+                            sock.write_all(&encode_packet(&[4, 0, b'x'])).await.unwrap(); // en utskrift emellan
+                            sock.write_all(&encode_packet(&r)).await.unwrap();
+                        }
+                        board_config::CMD_SET_MAIN_CONFIG => {
+                            stored = p[2..].to_vec();
+                            sock.write_all(&encode_packet(&[4, board_config::CMD_SET_MAIN_CONFIG])).await.unwrap();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
+
+        // Läs.
+        let (tx, rx) = oneshot::channel();
+        h.config.send(ConfigRequest::Read(tx)).await.unwrap();
+        let mut cfg = rx.await.unwrap().unwrap();
+        assert_eq!(cfg.count, 3);
+        assert_eq!(cfg.slots[2].vesc_id, 76);
+
+        // Skriv en ändring.
+        cfg.slots[2] = ActuatorSlot { kind: 0, vesc_id: 77, activity: 11, mode: 3 };
+        let (tx, rx) = oneshot::channel();
+        h.config.send(ConfigRequest::Write(cfg.clone(), tx)).await.unwrap();
+        let written = rx.await.unwrap().unwrap();
+        assert_eq!(written, cfg);
+
+        // Orimligt värde vägras innan något skickas.
+        let mut bad = cfg.clone();
+        bad.slots[0].mode = 2;
+        let (tx, rx) = oneshot::channel();
+        h.config.send(ConfigRequest::Write(bad, tx)).await.unwrap();
+        assert!(rx.await.unwrap().is_err());
+
+        drop(h);
+        let (original, stored) = fake_board.await.unwrap();
+        // Bara aktuatorbytena skiljer sig på "kortet".
+        let diff: Vec<usize> = (0..original.len()).filter(|&i| original[i] != stored[i]).collect();
+        assert!(!diff.is_empty());
+        let first = *diff.first().unwrap();
+        let last = *diff.last().unwrap();
+        assert!(last - first < 34, "ändringar utanför aktuatorblocket: {first}..{last}");
+        assert_eq!(original.len(), stored.len());
     }
 
     #[tokio::test]

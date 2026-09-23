@@ -1,3 +1,4 @@
+mod board_config;
 mod can_iface;
 mod car_client_link;
 mod config;
@@ -238,6 +239,38 @@ async fn main() {
                             let _ = respond_to.send(RobotMessage::VescBusResult(sightings)).await;
                         });
                     }
+                    RobotRequest::ReadActuators { respond_to } => {
+                        let config = link.as_ref().map(|l| l.config.clone());
+                        tokio::spawn(async move {
+                            let r = config_request(config, car_client_link::ConfigRequest::Read).await;
+                            let _ = respond_to.send(match r {
+                                Ok(c) => RobotMessage::Actuators(c),
+                                Err(e) => RobotMessage::ActuatorError(e),
+                            }).await;
+                        });
+                    }
+                    RobotRequest::WriteActuators { config: wanted, respond_to } => {
+                        // Under skrivningen skickas inga styrvärden (några sekunder),
+                        // så det får bara ske när roboten står still och inte är aktiverad.
+                        let moving = throttle_ramp.current() != 0.0 || steering_ramp.current() != 0.0;
+                        if last_activated || moving {
+                            let _ = respond_to.send(RobotMessage::ActuatorError(
+                                "Stäng av AKTIVERA och låt roboten stå still innan du skriver till styrkortet.".to_string(),
+                            )).await;
+                        } else {
+                            tracing::info!("Klienten vill skriva aktuatorer: {wanted:?}");
+                            let config = link.as_ref().map(|l| l.config.clone());
+                            tokio::spawn(async move {
+                                let r = config_request(config, |reply| {
+                                    car_client_link::ConfigRequest::Write(wanted, reply)
+                                }).await;
+                                let _ = respond_to.send(match r {
+                                    Ok(c) => RobotMessage::ActuatorsWritten(c),
+                                    Err(e) => RobotMessage::ActuatorError(e),
+                                }).await;
+                            });
+                        }
+                    }
                     RobotRequest::SaveVescProfile { profile, respond_to } => {
                         let mut new_cfg = cfg.clone();
                         new_cfg.vesc_profile.roller = profile.roller.into_iter()
@@ -279,6 +312,17 @@ async fn scan_vesc_bus(
     let (tx, rx) = tokio::sync::oneshot::channel();
     scan.send(tx).await.map_err(|_| "Car_Client-länken har avslutats")?;
     rx.await.map_err(|_| "Car_Client-länken avbröt skanningen".to_string())?
+}
+
+/// Skickar en inställningsfråga till länkuppgiften och väntar på svaret.
+async fn config_request(
+    config: Option<tokio::sync::mpsc::Sender<car_client_link::ConfigRequest>>,
+    make: impl FnOnce(car_client_link::ConfigReply) -> car_client_link::ConfigRequest,
+) -> Result<relay_protocol::ActuatorConfig, String> {
+    let config = config.ok_or("ingen Car_Client-länk (ogiltig car_client_addr)")?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    config.send(make(tx)).await.map_err(|_| "Car_Client-länken har avslutats")?;
+    rx.await.map_err(|_| "Car_Client-länken avbröt".to_string())?
 }
 
 /// Rampade spakvärden (-1..1) till värden för styrkortet. Förarens max från

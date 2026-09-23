@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use relay_protocol::{
-    ClientMessage, ControlCommand, LinkQuality, RobotMessage, StatusUpdate, VescProfileMsg,
+    ActuatorConfig, ClientMessage, ControlCommand, LinkQuality, RobotMessage, StatusUpdate, VescProfileMsg,
     VescSighting,
 };
 use tokio::sync::mpsc;
@@ -41,6 +41,15 @@ pub struct NetLink {
     pub vesc_scan_result: Option<Vec<VescSighting>>,
     pub vesc_profile_saved: bool,
     pub last_view_code: Option<String>,
+    /// Senaste svar om styrkortets aktuatorer, plockas upp av Settings-vyn.
+    pub actuator_reply: Option<ActuatorReply>,
+}
+
+/// Svar från robotd på läsning/skrivning av styrkortets aktuatorer.
+pub enum ActuatorReply {
+    Read(ActuatorConfig),
+    Written(ActuatorConfig),
+    Error(String),
 }
 
 enum LinkUpdate {
@@ -55,6 +64,7 @@ enum LinkUpdate {
     VescBusResult(Vec<VescSighting>),
     VescProfileSaved,
     ViewCode(String),
+    Actuators(ActuatorReply),
 }
 
 impl NetLink {
@@ -72,6 +82,7 @@ impl NetLink {
             vesc_scan_result: None,
             vesc_profile_saved: false,
             last_view_code: None,
+            actuator_reply: None,
         }
     }
 
@@ -123,6 +134,7 @@ impl NetLink {
                 LinkUpdate::VescBusResult(result) => self.vesc_scan_result = Some(result),
                 LinkUpdate::VescProfileSaved => self.vesc_profile_saved = true,
                 LinkUpdate::ViewCode(code) => self.last_view_code = Some(code),
+                LinkUpdate::Actuators(r) => self.actuator_reply = Some(r),
             }
         }
     }
@@ -168,6 +180,18 @@ impl NetLink {
     pub fn save_vesc_profile(&self, profile: VescProfileMsg) {
         if let Some(tx) = &self.request_tx {
             let _ = tx.try_send(ClientMessage::SaveVescProfile(profile));
+        }
+    }
+
+    pub fn read_actuators(&self) {
+        if let Some(tx) = &self.request_tx {
+            let _ = tx.try_send(ClientMessage::ReadActuators);
+        }
+    }
+
+    pub fn write_actuators(&self, config: ActuatorConfig) {
+        if let Some(tx) = &self.request_tx {
+            let _ = tx.try_send(ClientMessage::WriteActuators(config));
         }
     }
 
@@ -244,6 +268,15 @@ async fn run_connection(
                                 }
                                 RobotMessage::ViewCode { code, .. } => {
                                     let _ = updates_tx.send(LinkUpdate::ViewCode(code)).await;
+                                }
+                                RobotMessage::Actuators(c) => {
+                                    let _ = updates_tx.send(LinkUpdate::Actuators(ActuatorReply::Read(c))).await;
+                                }
+                                RobotMessage::ActuatorsWritten(c) => {
+                                    let _ = updates_tx.send(LinkUpdate::Actuators(ActuatorReply::Written(c))).await;
+                                }
+                                RobotMessage::ActuatorError(e) => {
+                                    let _ = updates_tx.send(LinkUpdate::Actuators(ActuatorReply::Error(e))).await;
                                 }
                                 _ => {}
                             }

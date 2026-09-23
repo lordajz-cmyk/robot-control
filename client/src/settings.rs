@@ -10,6 +10,47 @@
 //! mot riktig hårdvara — se TODO nedan).
 
 use eframe::egui;
+use relay_protocol::{ActuatorConfig, ActuatorSlot};
+
+use crate::net::ActuatorReply;
+
+/// Aktiviteter på styrkortet, samma nummer som RControlStation:s "controls"
+/// (dosan skickar dem i CMD_RC_CONTROL_ADV). robotd kör med 10 och 11.
+const ACTIVITIES: &[(u16, &str)] = &[
+    (10, "Fart (Speed Control)"),
+    (11, "Styrning (Steering Control)"),
+    (7, "Främre lyft (Front Lift)"),
+    (8, "Bakre lyft (Rear Lift)"),
+    (9, "Redskapsposition (Implement Position)"),
+    (12, "Nödstopp (Emergency Stop)"),
+];
+
+/// Lägen som firmware kör för VESC (motor_set_vesc_value).
+const MODES: &[(u16, &str)] = &[(0, "Duty"), (1, "Ström"), (3, "RPM")];
+
+const KINDS: &[(u16, &str)] = &[(0, "VESC"), (1, "Hydraulik")];
+
+fn name_of(list: &[(u16, &str)], v: u16) -> String {
+    list.iter()
+        .find(|(n, _)| *n == v)
+        .map(|(_, s)| s.to_string())
+        .unwrap_or_else(|| format!("Annan ({v})"))
+}
+
+fn combo(ui: &mut egui::Ui, id: String, list: &[(u16, &str)], value: &mut u16) -> bool {
+    let mut changed = false;
+    egui::ComboBox::from_id_source(id)
+        .selected_text(name_of(list, *value))
+        .show_ui(ui, |ui| {
+            for (n, label) in list {
+                if ui.selectable_label(*value == *n, *label).clicked() {
+                    *value = *n;
+                    changed = true;
+                }
+            }
+        });
+    changed
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VescRole {
@@ -63,6 +104,14 @@ pub struct SettingsView {
     pub scanning: bool,
     editing_other_name: String,
     dirty: bool,
+    /// Styrkortets aktuatorer som de redigeras här.
+    actuators: Option<ActuatorConfig>,
+    /// Det som senast lästes från / skrevs till styrkortet.
+    actuators_on_board: Option<ActuatorConfig>,
+    actuator_busy: bool,
+    confirm_write: bool,
+    /// (lyckades, text) efter senaste läsning/skrivning.
+    actuator_msg: Option<(bool, String)>,
 }
 
 impl SettingsView {
@@ -72,6 +121,11 @@ impl SettingsView {
             scanning: false,
             editing_other_name: String::new(),
             dirty: false,
+            actuators: None,
+            actuators_on_board: None,
+            actuator_busy: false,
+            confirm_write: false,
+            actuator_msg: None,
         }
     }
 
@@ -91,6 +145,23 @@ impl SettingsView {
         if net.vesc_profile_saved {
             net.vesc_profile_saved = false;
             self.dirty = false;
+        }
+        if let Some(reply) = net.actuator_reply.take() {
+            self.actuator_busy = false;
+            match reply {
+                ActuatorReply::Read(c) => {
+                    self.actuator_msg = Some((true, "Läst från styrkortet.".to_string()));
+                    self.actuators = Some(c.clone());
+                    self.actuators_on_board = Some(c);
+                }
+                ActuatorReply::Written(c) => {
+                    self.actuator_msg =
+                        Some((true, "Skrivet till styrkortet och kontrolläst. Sparat i kortets minne.".to_string()));
+                    self.actuators = Some(c.clone());
+                    self.actuators_on_board = Some(c);
+                }
+                ActuatorReply::Error(e) => self.actuator_msg = Some((false, e)),
+            }
         }
     }
 
@@ -149,7 +220,96 @@ impl SettingsView {
                     self.draw_vesc_row(ui, can_id);
                     ui.separator();
                 }
+
+                ui.add_space(16.0);
+                self.draw_actuators(ui, net);
             });
+        });
+    }
+
+    /// Styrkortets aktuatorer: vilken VESC som gör vad. Samma som
+    /// Confcommon-fliken i RControlStation (Read / Write).
+    fn draw_actuators(&mut self, ui: &mut egui::Ui, net: &crate::net::NetLink) {
+        ui.heading("Styrkortets aktuatorer");
+        ui.label(
+            "Vilken VESC som styrs av vad. Samma som Confcommon i RControlStation. \
+             Sparas på styrkortet och behövs en gång för ett nytt kort.",
+        );
+        ui.add_space(4.0);
+
+        ui.horizontal(|ui| {
+            let read_label = if self.actuator_busy { "Arbetar…" } else { "Läs från styrkortet" };
+            if ui.add_enabled(!self.actuator_busy, egui::Button::new(read_label)).clicked() {
+                self.actuator_busy = true;
+                self.confirm_write = false;
+                self.actuator_msg = None;
+                net.read_actuators();
+            }
+            let changed = self.actuators.is_some() && self.actuators != self.actuators_on_board;
+            if ui
+                .add_enabled(changed && !self.actuator_busy, egui::Button::new("Skriv till styrkortet"))
+                .clicked()
+            {
+                self.confirm_write = true;
+            }
+            if changed {
+                ui.colored_label(egui::Color32::YELLOW, "Ändrat, inte skrivet");
+            }
+        });
+
+        if self.confirm_write {
+            ui.horizontal(|ui| {
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 170, 90),
+                    "Skriva ändringarna till styrkortet? Roboten får inte vara aktiverad.",
+                );
+                if ui.button("Ja, skriv").clicked() {
+                    if let Some(c) = &self.actuators {
+                        self.actuator_busy = true;
+                        self.actuator_msg = None;
+                        net.write_actuators(c.clone());
+                    }
+                    self.confirm_write = false;
+                }
+                if ui.button("Avbryt").clicked() {
+                    self.confirm_write = false;
+                }
+            });
+        }
+
+        if let Some((ok, msg)) = &self.actuator_msg {
+            let color = if *ok { egui::Color32::from_rgb(60, 200, 90) } else { egui::Color32::from_rgb(230, 80, 80) };
+            ui.colored_label(color, msg);
+        }
+
+        let Some(cfg) = &mut self.actuators else {
+            ui.label("Tryck \"Läs från styrkortet\" för att se inställningarna.");
+            return;
+        };
+        cfg.slots.resize(4, ActuatorSlot::default());
+
+        ui.horizontal(|ui| {
+            ui.label("Antal aktuatorer som används:");
+            ui.add(egui::DragValue::new(&mut cfg.count).clamp_range(0..=4));
+        });
+
+        egui::Grid::new("actuator_grid").striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
+            ui.strong("#");
+            ui.strong("Typ");
+            ui.strong("VESC-ID");
+            ui.strong("Aktivitet");
+            ui.strong("Läge");
+            ui.end_row();
+            let count = cfg.count as usize;
+            for (i, slot) in cfg.slots.iter_mut().enumerate() {
+                let used = i < count;
+                ui.label(if used { format!("{}", i + 1) } else { format!("{} (används ej)", i + 1) });
+                ui.add_enabled_ui(used, |ui| combo(ui, format!("act_kind_{i}"), KINDS, &mut slot.kind));
+                ui.add_enabled_ui(used, |ui| ui.add(egui::DragValue::new(&mut slot.vesc_id).clamp_range(0..=254)));
+                ui.add_enabled_ui(used, |ui| combo(ui, format!("act_activity_{i}"), ACTIVITIES, &mut slot.activity));
+                ui.add_enabled_ui(used, |ui| combo(ui, format!("act_mode_{i}"), MODES, &mut slot.mode));
+                ui.end_row();
+            }
         });
     }
 

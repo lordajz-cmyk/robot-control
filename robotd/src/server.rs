@@ -56,6 +56,8 @@ struct AppState {
 pub enum RobotRequest {
     ScanVescBus { respond_to: mpsc::Sender<RobotMessage> },
     SaveVescProfile { profile: relay_protocol::VescProfileMsg, respond_to: mpsc::Sender<RobotMessage> },
+    ReadActuators { respond_to: mpsc::Sender<RobotMessage> },
+    WriteActuators { config: relay_protocol::ActuatorConfig, respond_to: mpsc::Sender<RobotMessage> },
 }
 
 pub struct ServerHandles {
@@ -265,6 +267,22 @@ async fn handle_socket(
                                     code,
                                     ttl_secs: ttl.as_secs() as u32,
                                 }).await;
+                            }
+                            Ok(ClientMessage::ReadActuators) => {
+                                let _ = state.request_tx.send(RobotRequest::ReadActuators {
+                                    respond_to: out_tx.clone(),
+                                }).await;
+                            }
+                            Ok(ClientMessage::WriteActuators(config)) if is_driver => {
+                                let _ = state.request_tx.send(RobotRequest::WriteActuators {
+                                    config,
+                                    respond_to: out_tx.clone(),
+                                }).await;
+                            }
+                            Ok(ClientMessage::WriteActuators(_)) => {
+                                let _ = out_tx.send(RobotMessage::ActuatorError(
+                                    "bara föraren kan skriva till styrkortet".to_string(),
+                                )).await;
                             }
                             Ok(ClientMessage::Ping { sent_ms }) => {
                                 let _ = out_tx.send(RobotMessage::Pong { sent_ms }).await;

@@ -37,6 +37,10 @@ pub enum ClientMessage {
     /// Fungerar också som ett levnadstecken för framtida
     /// timeout/keepalive-logik på robotd-sidan.
     Ping { sent_ms: u64 },
+    /// Läs styrkortets aktuatorinställningar (som Read i RControlStation:s Confcommon).
+    ReadActuators,
+    /// Skriv aktuatorinställningarna till styrkortet (som Write). Bara förare.
+    WriteActuators(ActuatorConfig),
 }
 
 /// Skickas av robotd till en ansluten klient.
@@ -52,6 +56,32 @@ pub enum RobotMessage {
     VideoSignal(String),
     ViewCode { code: String, ttl_secs: u32 },
     Pong { sent_ms: u64 },
+    /// Svar på ReadActuators.
+    Actuators(ActuatorConfig),
+    /// Svar på WriteActuators: skrivet och kontrolläst från styrkortet.
+    ActuatorsWritten(ActuatorConfig),
+    /// Läsning/skrivning av aktuatorer misslyckades; inget ändrat om inget annat sägs.
+    ActuatorError(String),
+}
+
+/// En aktuator på styrkortet: vilken motor som styrs av vilken aktivitet.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActuatorSlot {
+    /// 0 = VESC-motor, 1 = hydraulik.
+    pub kind: u16,
+    /// VESC:ns CAN-ID.
+    pub vesc_id: u16,
+    /// Aktivitet: 10 = fart ("Speed Control"), 11 = styrning ("Steering Control") m.fl.
+    pub activity: u16,
+    /// 0 = duty, 1 = ström, 3 = rpm.
+    pub mode: u16,
+}
+
+/// Styrkortets aktuatorer: `count` första av de fyra platserna används.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActuatorConfig {
+    pub count: u16,
+    pub slots: Vec<ActuatorSlot>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

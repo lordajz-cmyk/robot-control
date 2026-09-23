@@ -103,6 +103,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let mut battery_percent: f32 = 87.0;
     let mut speed_kmh: f32 = 0.0;
     let mut lights_on = false;
+    // Låtsas-styrkortets aktuatorer, som RobAnt: 28/36 fart, 76 styrning.
+    let mock_actuators = tokio::sync::Mutex::new(relay_protocol::ActuatorConfig {
+        count: 3,
+        slots: vec![
+            relay_protocol::ActuatorSlot { kind: 0, vesc_id: 28, activity: 10, mode: 0 },
+            relay_protocol::ActuatorSlot { kind: 0, vesc_id: 36, activity: 10, mode: 0 },
+            relay_protocol::ActuatorSlot { kind: 0, vesc_id: 76, activity: 11, mode: 0 },
+            relay_protocol::ActuatorSlot::default(),
+        ],
+    });
     let mut status_tick = tokio::time::interval(Duration::from_millis(500));
 
     const STALE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -167,6 +177,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             }
                             Ok(ClientMessage::Ping { sent_ms }) => {
                                 let _ = send(&mut ws_tx, &RobotMessage::Pong { sent_ms }).await;
+                            }
+                            Ok(ClientMessage::ReadActuators) => {
+                                println!("Läser aktuatorer (påhittade, som RobAnt).");
+                                let cfg = mock_actuators.lock().await.clone();
+                                let _ = send(&mut ws_tx, &RobotMessage::Actuators(cfg)).await;
+                            }
+                            Ok(ClientMessage::WriteActuators(cfg)) => {
+                                println!("Skriver aktuatorer (bara i minnet): {cfg:?}");
+                                *mock_actuators.lock().await = cfg.clone();
+                                let _ = send(&mut ws_tx, &RobotMessage::ActuatorsWritten(cfg)).await;
                             }
                             Ok(ClientMessage::Control(_)) => {
                                 println!("Icke-förare försökte skicka Control, ignoreras.");
