@@ -117,7 +117,11 @@ int main(int argc, char *argv[])
     int tcpPort = 8300;
     bool logUsb = false;
     QString logUsbDir = QDir::currentPath() + "/logs";
-    bool inputRtcm = true;
+    // Av som standard (som i Vedders original). Porten nedan är styrkortets, och
+    // läses den som RTCM tävlar den med styrkortslänken om varje byte: svar från
+    // kortet försvinner slumpvis (VESC-status, inställningar). RTK kommer via nätet
+    // (--tcprtcmserver). Slå på med --inputrtcm --ttyportrtcm <egen port>.
+    bool inputRtcm = false;
 //    QString ttyPortRtcm = "/dev/ttyACM1";
     QString ttyPortRtcm = "/dev/vehicle";
     bool inputArduino = false;
