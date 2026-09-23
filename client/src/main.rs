@@ -90,6 +90,8 @@ struct App {
     /// robotd:s videoport (`video.port` i robotd:s config.json).
     video_port: u16,
     video_texture: Option<egui::TextureHandle>,
+    /// Förarens Max (0..1) som i RControlStation, sparas mellan körningar.
+    max_output: f32,
 }
 
 impl App {
@@ -113,6 +115,7 @@ impl App {
             video: video::VideoReceiver::new(),
             video_port: 9001,
             video_texture: None,
+            max_output: load_max_output(),
         }
     }
 
@@ -288,6 +291,7 @@ impl App {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0),
+            max_output: Some(self.max_output),
         };
         self.net.send_control(cmd);
 
@@ -409,6 +413,23 @@ impl App {
                                 self.screen = Screen::Settings;
                             }
                         });
+                        ui.horizontal(|ui| {
+                            let resp = ui
+                                .add(
+                                    egui::DragValue::new(&mut self.max_output)
+                                        .clamp_range(0.05..=1.0)
+                                        .speed(0.005)
+                                        .fixed_decimals(2)
+                                        .prefix("Max: "),
+                                )
+                                .on_hover_text(
+                                    "Värdet som skickas vid fullt spakutslag (som Max i RControlStation). \
+                                     Dra eller dubbelklicka och skriv. Gäller direkt, även under körning.",
+                                );
+                            if resp.changed() {
+                                save_max_output(self.max_output);
+                            }
+                        });
                     });
 
                 if !self.activated {
@@ -445,6 +466,9 @@ impl App {
                                 self.activated = true;
                                 self.last_activity = Instant::now();
                             }
+                            if let Some(why) = self.activate_blocker() {
+                                ui.colored_label(egui::Color32::from_rgb(255, 170, 90), why);
+                            }
                         });
                 }
             });
@@ -463,43 +487,101 @@ impl App {
     /// den. Kamerakravet gäller bara i CAM-läge; i LOS-läge släpps det,
     /// eftersom föraren då litar på egen sikt istället för skärmen.
     fn can_activate(&self) -> bool {
-        // TODO: koppla mot verklig statuskontroll (kamera-frame mottagen,
-        // senaste StatusUpdate visar att drift/styr-VESC svarar). Båda
-        // nedan är placeholders tills dess (`true`), men logiken/strukturen
-        // är på plats för när riktiga signaler finns.
-        let vesc_ok = true; // TODO: verklig koll
-        // Kamerakravet (CAM-läge): en NY bild måste ha kommit nyligen. En
-        // frusen eller saknad ström blockerar alltså AKTIVERA, precis som
-        // specen avser; LOS-läget släpper kravet (se nedan).
-        let camera_ok = self.video.is_live();
+        self.activate_blocker().is_none()
+    }
 
-        let camera_requirement_met = match self.driving_mode {
-            DrivingMode::Cam => camera_ok,
-            DrivingMode::Los => true,
+    /// Varför AKTIVERA inte går att trycka, eller `None` om allt är OK.
+    fn activate_blocker(&self) -> Option<String> {
+        // VESC-kravet gäller i båda lägena: alla VESC som ska finnas på
+        // roboten måste ha skickat CAN-status nyss (enligt färsk status från robotd).
+        let Some(status) = self.net.fresh_status() else {
+            return Some("Väntar på status från roboten…".to_string());
         };
-
-        vesc_ok && camera_requirement_met
+        if let Some(err) = &status.last_error {
+            if status.vescs_responding.is_empty() {
+                return Some(err.clone());
+            }
+        }
+        let missing: Vec<u8> = status
+            .vescs_expected
+            .iter()
+            .copied()
+            .filter(|id| !status.vescs_responding.contains(id))
+            .collect();
+        if !missing.is_empty() {
+            return Some(format!("VESC svarar inte: {missing:?}"));
+        }
+        if status.vescs_expected.is_empty() && status.vescs_responding.is_empty() {
+            return Some("Ingen VESC svarar".to_string());
+        }
+        // Kamerakravet gäller bara i CAM-läge: en NY bild måste ha kommit nyligen.
+        if self.driving_mode == DrivingMode::Cam && !self.video.is_live() {
+            return Some("Ingen kamerabild – byt till LOS för att köra utan".to_string());
+        }
+        None
     }
 
     fn status_text(&self) -> String {
-        let status = self.net.last_status.as_ref();
+        let status = self.net.fresh_status();
         let speed = status
             .and_then(|s| s.speed_kmh)
             .map(|v| format!("{v:.1} km/h"))
             .unwrap_or_else(|| "–".to_string());
-        let battery = status
-            .and_then(|s| s.battery_percent)
-            .map(|v| format!("{v:.0}%"))
+        let battery = match (status.and_then(|s| s.battery_voltage), status.and_then(|s| s.battery_percent)) {
+            (Some(v), Some(p)) => format!("{v:.1} V ({p:.0}%)"),
+            (Some(v), None) => format!("{v:.1} V"),
+            (None, Some(p)) => format!("{p:.0}%"),
+            (None, None) => "–".to_string(),
+        };
+        let vesc = match status {
+            Some(s) if !s.vescs_expected.is_empty() => {
+                let ok = s.vescs_expected.iter().filter(|id| s.vescs_responding.contains(id)).count();
+                format!("{ok}/{} svarar", s.vescs_expected.len())
+            }
+            Some(s) => format!("{} svarar", s.vescs_responding.len()),
+            None => "–".to_string(),
+        };
+        let temp = status
+            .and_then(|s| s.vesc_temps_c.iter().copied().reduce(f32::max))
+            .map(|t| format!("{t:.0} °C"))
             .unwrap_or_else(|| "–".to_string());
         let ping = self
             .net
             .last_ping_ms
             .map(|v| format!("{v} ms"))
             .unwrap_or_else(|| "–".to_string());
-        format!(
-            "Hastighet: {speed}\nBatteri: {battery}\nPing: {ping}\nVideo: {}",
+        let mut text = format!(
+            "Hastighet: {speed}\nBatteri: {battery}\nVESC: {vesc}\nTemp: {temp}\nPing: {ping}\nVideo: {}",
             self.video.status_line()
-        )
+        );
+        if let Some(err) = status.and_then(|s| s.last_error.as_ref()) {
+            text.push_str(&format!("\n⚠ {err}"));
+        }
+        text
+    }
+}
+
+fn max_output_path() -> Option<std::path::PathBuf> {
+    directories::ProjectDirs::from("se", "robot-control", "robotstyrning")
+        .map(|d| d.config_dir().join("max.json"))
+}
+
+/// Förarens Max, 0.45 om inget sparats (det som används på RobAnt).
+fn load_max_output() -> f32 {
+    max_output_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str::<f32>(&s).ok())
+        .filter(|v| v.is_finite())
+        .map(|v| v.clamp(0.05, 1.0))
+        .unwrap_or(0.45)
+}
+
+fn save_max_output(v: f32) {
+    if let Some(path) = max_output_path() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(path, format!("{v:.2}"));
     }
 }
 

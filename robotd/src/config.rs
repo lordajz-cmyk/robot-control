@@ -85,6 +85,9 @@ pub struct DriveConfig {
     /// ström, rpm) bestäms av aktuatorns läge på kortet.
     pub speed_max: f32,
     pub steering_max: f32,
+    /// Tak för förarens Max-reglage i klienten (0..1). 1.0 = samma frihet
+    /// som i RControlStation; sänk för en robot som inte ska gå fortare.
+    pub max_cap: f32,
     /// Byt tecken om roboten kör/svänger åt fel håll.
     pub invert_speed: bool,
     pub invert_steering: bool,
@@ -97,6 +100,7 @@ impl Default for DriveConfig {
             steering_activity: 11,
             speed_max: 0.45,
             steering_max: 0.45,
+            max_cap: 1.0,
             invert_speed: false,
             invert_steering: false,
         }

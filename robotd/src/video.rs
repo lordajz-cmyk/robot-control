@@ -95,13 +95,30 @@ pub fn spawn(cfg: VideoConfig, control_bind_addr: &str) {
     });
 }
 
-async fn run(cfg: VideoConfig, addr: SocketAddr) -> std::io::Result<()> {
+fn bind_listener(addr: SocketAddr) -> std::io::Result<TcpListener> {
     let socket = if addr.is_ipv4() { TcpSocket::new_v4()? } else { TcpSocket::new_v6()? };
     socket.set_reuseaddr(true)?;
     // Sätts på lyssnarsocketen; accepterade anslutningar ärver den.
     socket.set_send_buffer_size(SEND_BUFFER)?;
     socket.bind(addr)?;
-    let listener: TcpListener = socket.listen(8)?;
+    socket.listen(8)
+}
+
+async fn run(cfg: VideoConfig, addr: SocketAddr) -> std::io::Result<()> {
+    // Vid uppstart kan WireGuard-adressen saknas en stund — försök igen.
+    let mut failures = 0u32;
+    let listener = loop {
+        match bind_listener(addr) {
+            Ok(l) => break l,
+            Err(e) => {
+                failures += 1;
+                if failures == 1 || failures % 20 == 0 {
+                    tracing::warn!("Video: kan inte lyssna på {addr} än ({e}), försöker igen var 3:e s.");
+                }
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+        }
+    };
     tracing::info!(
         "Video lyssnar på {addr} ({}x{} @ {} fps, {} kbit/s, {})",
         cfg.width, cfg.height, cfg.fps, cfg.bitrate_kbps, cfg.encoder

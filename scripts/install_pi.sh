@@ -126,21 +126,12 @@ Wants=network-online.target
 # saknas), men ger rätt startordning om/när den finns.
 
 [Service]
-# 90 sekunders fördröjning innan robotd faktiskt startar. Samma lärdom som
-# från RControlStation: 5G-modemet tar ~90s att koppla upp sig och
-# CarController-kortet ~60s att starta, så robotd (eller Car_Client) som
-# hoppar igång direkt vid strömsättning ger krångel. Läggs som en separat
-# ExecStartPre-sleep, inte i själva robotd-koden, så det syns tydligt här
-# och går att justera utan omkompilering.
-#
-# OBS (2026-09-20): den andra installationens egen start_car.sh har bara
-# `sleep 10`, inte 90 — oklart om det är en skillnad mot vad som faktiskt
-# körs på er redan fungerande maskin, eller ett kvarstående problem där
-# också. Värt att verifiera. robotd:s egna 90s + interna Car_Client-retries
-# (se main.rs) ger ändå gott om marginal oavsett vad den andra tjänsten gör.
-ExecStartPre=/bin/sleep 90
+# Ingen fast startfördröjning behövs: robotd väntar själv på WireGuard-adressen
+# och ansluter till Car_Client först när en klient kopplar upp sig (och släpper
+# den när klienten går, så RControlStation fungerar som vanligt däremellan).
+# Uppdatera/slå på med scripts/skicka_robotd.sh från datorn.
 ExecStart=/usr/local/bin/robotd
-Restart=on-failure
+Restart=always
 RestartSec=2
 User=root
 # robotd behöver GPIO/I2C/CAN-åtkomst, körs som root för enkelhets skull i

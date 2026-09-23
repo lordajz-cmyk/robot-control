@@ -3365,6 +3365,7 @@ dependencies = [
  "socketcan",
  "ssd1306",
  "tokio",
+ "tokio-tungstenite 0.21.0",
  "tracing",
  "tracing-subscriber",
 ]

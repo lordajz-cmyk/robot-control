@@ -28,23 +28,31 @@ async fn main() {
     let cfg = RobotConfig::load_or_default(Path::new(CONFIG_PATH));
     tracing::info!("robotd startar som '{}'", cfg.robot_id);
 
+    // Nätverket: robotd LYSSNAR direkt på sin WireGuard-IP (se
+    // PROJECT_SPEC.md §14) — ingen central reläserver längre. `bind_addr`
+    // sätts i /etc/robotd/config.json, t.ex. "192.168.200.8:9000".
+    let mut server = server::spawn(cfg.bind_addr.clone());
+
     // Länken till det redan körande Car_Client (se PROJECT_SPEC.md §13) i en
-    // egen uppgift som återansluter själv — Car_Client kan starta senare än
-    // robotd eller startas om. Styrning och skanning går båda genom den,
-    // eftersom Car_Client bara tar en klient åt gången.
+    // egen uppgift. Den tar Car_Client bara medan en klient är ansluten och
+    // släpper den annars, så att RControlStation kan användas när ingen kör
+    // med robotstyrning (Car_Client tar bara en klient åt gången).
     let link = match cfg.car_client_addr.parse() {
-        Ok(addr) => Some(car_client_link::spawn(car_client_link::LinkParams {
-            addr,
-            car_id: cfg.car_client_id,
-            speed_activity: cfg.drive.speed_activity,
-            steering_activity: cfg.drive.steering_activity,
-        })),
+        Ok(addr) => Some(car_client_link::spawn(
+            car_client_link::LinkParams {
+                addr,
+                car_id: cfg.car_client_id,
+                speed_activity: cfg.drive.speed_activity,
+                steering_activity: cfg.drive.steering_activity,
+            },
+            server.clients_connected.clone(),
+        )),
         Err(e) => {
             tracing::error!("Ogiltig car_client_addr i config: {e} — ingen körning möjlig.");
             None
         }
     };
-    let car_client_ok = || link.as_ref().is_some_and(|l| *l.connected.borrow());
+    let car_client_ok = || link.as_ref().is_some_and(|l| l.status.borrow().connected);
 
     let mut lighting = match gpio_lighting::LightingRelay::new(cfg.lighting_gpio_pin, false) {
         Ok(l) => {
@@ -79,11 +87,6 @@ async fn main() {
         });
     }
 
-    // Nätverket: robotd LYSSNAR direkt på sin WireGuard-IP (se
-    // PROJECT_SPEC.md §14) — ingen central reläserver längre. `bind_addr`
-    // sätts i /etc/robotd/config.json, t.ex. "192.168.200.8:9000".
-    let mut server = server::spawn(cfg.bind_addr.clone());
-
     // Kameraströmmen (egen port, se video.rs). Ett fel där får aldrig stoppa
     // styrningen, så den startas fristående och loggar bara.
     video::spawn(cfg.video.clone(), &cfg.bind_addr);
@@ -107,6 +110,10 @@ async fn main() {
     let mut cmds_since_log: u32 = 0;
     let mut last_wd_state = WatchdogState::HardStop;
     let mut last_drive_log = Instant::now();
+    // Förarens max från klienten (Max-reglaget), om den skickar något.
+    let mut client_max: Option<f32> = None;
+    // Status till klienterna två gånger per sekund.
+    let mut status_tick = tokio::time::interval(Duration::from_millis(500));
 
     loop {
         tokio::select! {
@@ -136,7 +143,7 @@ async fn main() {
                 }
 
                 if let Some(l) = &link {
-                    let sp = drive_setpoint(&cfg.drive, throttle_ramp.current(), steering_ramp.current());
+                    let sp = drive_setpoint(&cfg.drive, client_max, throttle_ramp.current(), steering_ramp.current());
                     // Körlogg en gång per sekund medan någon är ansluten.
                     if now.duration_since(last_drive_log) >= Duration::from_secs(1) {
                         if cmds_since_log > 0 || !sp.is_zero() {
@@ -146,7 +153,7 @@ async fn main() {
                                  skickar fart={:.3} styr={:.3}, Car_Client {}",
                                 sp.speed,
                                 sp.steering,
-                                if *l.connected.borrow() { "ansluten" } else { "EJ ansluten" },
+                                if l.status.borrow().connected { "ansluten" } else { "EJ ansluten" },
                             );
                         }
                         cmds_since_log = 0;
@@ -163,6 +170,13 @@ async fn main() {
                 // (hastighet, batteri, GPS, VESC-temp) och skicka den via
                 // server.status_broadcast, istället för att inte skicka
                 // någon status alls just nu.
+            }
+            _ = status_tick.tick() => {
+                if let Some(l) = &link {
+                    let status = build_status(&l.status.borrow(), &l.telemetry.borrow(), &cfg.known_vesc_ids);
+                    // Aldrig vänta på nätverket här — hellre tappa en status.
+                    let _ = server.status_broadcast.try_send(status);
+                }
             }
             _ = display_tick.tick() => {
                 if let Some(d) = &mut status_display {
@@ -185,6 +199,7 @@ async fn main() {
                 let clean = |v: f32| if cmd.activated && v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };
                 target_throttle = clean(cmd.throttle);
                 target_steering = clean(cmd.steering);
+                client_max = cmd.max_output.filter(|m| m.is_finite());
 
                 if cmd.lights != lights_on {
                     if let Some(l) = &mut lighting {
@@ -241,11 +256,6 @@ async fn main() {
     }
 }
 
-// Tyst varning: används inte just nu men signaturen finns kvar för när
-// riktig StatusUpdate byggs ovan (se TODO).
-#[allow(dead_code)]
-fn _unused(_: StatusUpdate) {}
-
 /// Skanningsresultat + kända ID:n till en lista för Settings-vyn: de som
 /// svarade märks `responding: true`, kända som inte svarade `false`.
 fn merge_scan_with_known(found: &[u8], known: &[u8]) -> Vec<VescSighting> {
@@ -271,10 +281,18 @@ async fn scan_vesc_bus(
     rx.await.map_err(|_| "Car_Client-länken avbröt skanningen".to_string())?
 }
 
-/// Rampade spakvärden (-1..1) till värden för styrkortet enligt config.
-fn drive_setpoint(d: &config::DriveConfig, throttle: f32, steering: f32) -> car_client_link::DriveSetpoint {
+/// Rampade spakvärden (-1..1) till värden för styrkortet. Förarens max från
+/// klienten gäller för både fart och styrning (som Max-rutan i RControlStation),
+/// begränsat av `max_cap`; utan det används config:ens `speed_max`/`steering_max`.
+fn drive_setpoint(
+    d: &config::DriveConfig,
+    client_max: Option<f32>,
+    throttle: f32,
+    steering: f32,
+) -> car_client_link::DriveSetpoint {
+    let cap = d.max_cap.clamp(0.0, 1.0);
     let scale = |v: f32, max: f32, invert: bool| {
-        let max = max.clamp(0.0, 1.0);
+        let max = client_max.unwrap_or(max).clamp(0.0, cap);
         let v = v.clamp(-1.0, 1.0) * max;
         if invert { -v } else { v }
     };
@@ -288,6 +306,27 @@ fn drive_setpoint(d: &config::DriveConfig, throttle: f32, steering: f32) -> car_
 /// Ingen ping, ingen extern förfrågan — bara att gränssnittet självt
 /// rapporterar "up" i kärnan. Räcker för "syns roboten på VPN:et alls",
 /// inte en fullständig internetkontroll.
+/// StatusUpdate till klienterna från länkens läge och styrkortets telemetri.
+fn build_status(
+    link: &car_client_link::LinkStatus,
+    t: &car_client_link::Telemetry,
+    expected: &[u8],
+) -> StatusUpdate {
+    let board = t.board;
+    let fault = board.filter(|b| b.fault_code != 0).map(|b| format!("VESC-fel, kod {}", b.fault_code));
+    StatusUpdate {
+        speed_kmh: board.map(|b| b.speed_ms.abs() * 3.6),
+        battery_percent: board.map(|b| vesc_can::estimate_battery_percent(b.v_in)),
+        gps_fix: false,
+        vesc_temps_c: board.map(|b| vec![b.temp_mos]).unwrap_or_default(),
+        last_error: link.error.clone().or(fault),
+        link_quality: relay_protocol::LinkQuality::Green,
+        battery_voltage: board.map(|b| b.v_in),
+        vescs_responding: t.vescs.iter().filter(|e| e.is_fresh()).map(|e| e.can_id).collect(),
+        vescs_expected: expected.to_vec(),
+    }
+}
+
 fn check_internet() -> bool {
     std::fs::read_to_string("/sys/class/net/wg0/operstate")
         .map(|s| s.trim() == "up")
@@ -318,15 +357,21 @@ mod tests {
     #[test]
     fn spakvarden_skalas_och_begransas() {
         let d = config::DriveConfig::default();
-        let sp = drive_setpoint(&d, 1.0, -0.5);
+        let sp = drive_setpoint(&d, None, 1.0, -0.5);
         assert!((sp.speed - 0.45).abs() < 1e-6);
         assert!((sp.steering + 0.225).abs() < 1e-6);
         // Trasig config kan aldrig ge mer än fullt utslag.
         let wild = config::DriveConfig { speed_max: 7.0, steering_max: 7.0, invert_steering: true, ..d };
-        let sp = drive_setpoint(&wild, 3.0, 1.0);
+        let sp = drive_setpoint(&wild, None, 3.0, 1.0);
         assert_eq!(sp.speed, 1.0);
         assert_eq!(sp.steering, -1.0);
-        assert!(drive_setpoint(&d, 0.0, 0.0).is_zero());
+        assert!(drive_setpoint(&d, None, 0.0, 0.0).is_zero());
+        // Förarens max gäller för båda, men aldrig över taket.
+        let sp = drive_setpoint(&d, Some(0.6), 1.0, 1.0);
+        assert!((sp.speed - 0.6).abs() < 1e-6 && (sp.steering - 0.6).abs() < 1e-6);
+        let capped = config::DriveConfig { max_cap: 0.5, ..d.clone() };
+        assert!((drive_setpoint(&capped, Some(0.9), 1.0, 0.0).speed - 0.5).abs() < 1e-6);
+        assert_eq!(drive_setpoint(&d, Some(-3.0), 1.0, 0.0).speed, 0.0);
     }
 
     #[test]

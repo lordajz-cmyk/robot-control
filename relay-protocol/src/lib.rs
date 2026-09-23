@@ -67,6 +67,11 @@ pub struct ControlCommand {
     /// Millisekunder sedan epoch när klienten skapade kommandot, för
     /// latensmätning och för watchdogens tidsbedömning.
     pub timestamp_ms: u64,
+    /// Förarens max (0..1), som "Max"-rutan i RControlStation: värdet som
+    /// skickas till styrkortet vid fullt spakutslag. robotd begränsar det
+    /// till sitt eget tak (`drive.max_cap`). `None` = robotd:s config gäller.
+    #[serde(default)]
+    pub max_output: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +82,15 @@ pub struct StatusUpdate {
     pub vesc_temps_c: Vec<f32>,
     pub last_error: Option<String>,
     pub link_quality: LinkQuality,
+    /// Batterispänning i volt (styrkortets v_in).
+    #[serde(default)]
+    pub battery_voltage: Option<f32>,
+    /// VESC-ID som skickat CAN-status de senaste sekunderna.
+    #[serde(default)]
+    pub vescs_responding: Vec<u8>,
+    /// VESC-ID som ska finnas på roboten (robotd:s `known_vesc_ids`).
+    #[serde(default)]
+    pub vescs_expected: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

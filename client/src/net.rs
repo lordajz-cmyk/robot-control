@@ -31,6 +31,8 @@ pub struct NetLink {
     pub state: ConnectionState,
     pub deny_reason: Option<String>,
     pub last_status: Option<StatusUpdate>,
+    /// När senaste status kom — äldre status räknas inte som aktuell.
+    pub last_status_at: Option<Instant>,
     pub last_ping_ms: Option<u32>,
     last_pong_at: Option<Instant>,
     updates_rx: Option<mpsc::Receiver<LinkUpdate>>,
@@ -61,6 +63,7 @@ impl NetLink {
             state: ConnectionState::Disconnected,
             deny_reason: None,
             last_status: None,
+            last_status_at: None,
             last_ping_ms: None,
             last_pong_at: None,
             updates_rx: None,
@@ -78,6 +81,8 @@ impl NetLink {
     /// `port` är robotd:s port (default 9000, se robotd:s config.json).
     pub fn connect(&mut self, rt: &tokio::runtime::Handle, target: String, port: u16, as_viewer: bool, view_code: Option<String>) {
         self.state = ConnectionState::Connecting;
+        self.last_status = None;
+        self.last_status_at = None;
         let (updates_tx, updates_rx) = mpsc::channel::<LinkUpdate>(32);
         let (control_tx, control_rx) = mpsc::channel::<ControlCommand>(32);
         let (request_tx, request_rx) = mpsc::channel::<ClientMessage>(16);
@@ -104,7 +109,10 @@ impl NetLink {
                     self.state = s;
                     self.deny_reason = reason;
                 }
-                LinkUpdate::Status(s) => self.last_status = Some(s),
+                LinkUpdate::Status(s) => {
+                    self.last_status = Some(s);
+                    self.last_status_at = Some(Instant::now());
+                }
                 LinkUpdate::Pong(ms) => {
                     self.last_ping_ms = Some(ms);
                     self.last_pong_at = Some(Instant::now());
@@ -117,6 +125,12 @@ impl NetLink {
                 LinkUpdate::ViewCode(code) => self.last_view_code = Some(code),
             }
         }
+    }
+
+    /// Senaste status om den är färsk (robotd skickar två gånger per sekund).
+    pub fn fresh_status(&self) -> Option<&StatusUpdate> {
+        let at = self.last_status_at?;
+        (at.elapsed() < Duration::from_secs(3)).then_some(self.last_status.as_ref()?)
     }
 
     pub fn link_quality(&self, now: Instant) -> LinkQuality {

@@ -22,7 +22,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use relay_protocol::{ClientMessage, ControlCommand, RobotMessage, StatusUpdate};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, watch, Mutex};
 
 struct ViewCode {
     code: String,
@@ -34,6 +34,8 @@ struct SharedState {
     /// Finns en förare just nu? (enkel närvaromarkör, se `connect`)
     driver_connected: bool,
     view_codes: Vec<ViewCode>,
+    /// Antal anslutna klienter (förare + åskådare).
+    clients: usize,
 }
 
 #[derive(Clone)]
@@ -45,6 +47,8 @@ struct AppState {
     request_tx: mpsc::Sender<RobotRequest>,
     /// Senaste status, spegling för nya klienter direkt vid anslutning.
     latest_status: Arc<Mutex<Option<StatusUpdate>>>,
+    /// true medan minst en klient är ansluten (styr Car_Client-länken).
+    clients_tx: Arc<watch::Sender<bool>>,
 }
 
 /// Förfrågningar från en klient som huvudloopen (main.rs) hanterar och
@@ -60,6 +64,8 @@ pub struct ServerHandles {
     /// main.rs anropar den här för att sprida en ny StatusUpdate till alla
     /// anslutna klienter (drivrutinen håller koll på vilka som är kopplade).
     pub status_broadcast: mpsc::Sender<StatusUpdate>,
+    /// true medan minst en klient är ansluten.
+    pub clients_connected: watch::Receiver<bool>,
 }
 
 /// Startar servern på `bind_addr` (t.ex. "192.168.200.8:9000" eller
@@ -71,6 +77,7 @@ pub fn spawn(bind_addr: String) -> ServerHandles {
     let (status_tx, mut status_rx) = mpsc::channel::<StatusUpdate>(16);
 
     let latest_status = Arc::new(Mutex::new(None));
+    let (clients_tx, clients_rx) = watch::channel(false);
     let broadcast_targets: Arc<Mutex<Vec<mpsc::Sender<RobotMessage>>>> = Arc::new(Mutex::new(Vec::new()));
 
     let state = AppState {
@@ -78,6 +85,7 @@ pub fn spawn(bind_addr: String) -> ServerHandles {
         control_tx,
         request_tx,
         latest_status: latest_status.clone(),
+        clients_tx: Arc::new(clients_tx),
     };
 
     // Sprid varje ny status till alla anslutna klienters kanaler.
@@ -106,19 +114,27 @@ pub fn spawn(bind_addr: String) -> ServerHandles {
                 }))
                 .with_state(state);
 
-            match tokio::net::TcpListener::bind(&bind_addr).await {
-                Ok(listener) => {
-                    tracing::info!("robotd lyssnar på {bind_addr}");
-                    if let Err(e) = axum::serve(listener, app).await {
-                        tracing::error!("servern stannade: {e}");
+            // Vid uppstart (robotd.service) kan WireGuard-adressen saknas en
+            // stund — försök igen i stället för att ge upp för gott.
+            let mut failures = 0u32;
+            let listener = loop {
+                match tokio::net::TcpListener::bind(&bind_addr).await {
+                    Ok(l) => break l,
+                    Err(e) => {
+                        failures += 1;
+                        if failures == 1 || failures % 20 == 0 {
+                            tracing::warn!(
+                                "Kunde inte binda {bind_addr}: {e}. Väntar på att adressen finns \
+                                 (WireGuard-tunneln uppe?) och att porten är ledig — försöker igen var 3:e s."
+                            );
+                        }
+                        tokio::time::sleep(Duration::from_secs(3)).await;
                     }
                 }
-                Err(e) => {
-                    tracing::error!(
-                        "Kunde inte binda {bind_addr}: {e}. Kontrollera att adressen finns \
-                         (t.ex. att WireGuard-tunneln är uppe) och att porten är ledig."
-                    );
-                }
+            };
+            tracing::info!("robotd lyssnar på {bind_addr}");
+            if let Err(e) = axum::serve(listener, app).await {
+                tracing::error!("servern stannade: {e}");
             }
         });
     }
@@ -127,6 +143,7 @@ pub fn spawn(bind_addr: String) -> ServerHandles {
         incoming_control: control_rx,
         incoming_requests: request_rx,
         status_broadcast: status_tx,
+        clients_connected: clients_rx,
     }
 }
 
@@ -189,6 +206,11 @@ async fn handle_socket(
     }
 
     broadcast_targets.lock().await.push(out_tx.clone());
+    {
+        let mut shared = state.shared.lock().await;
+        shared.clients += 1;
+        state.clients_tx.send_replace(true);
+    }
 
     // Om ingen giltig ClientMessage kommit på STALE_TIMEOUT: släpp
     // förar-platsen. Löser risken båda testomgångarna 2026-09-19 flaggade —
@@ -284,8 +306,13 @@ async fn handle_socket(
         }
     }
 
-    if is_driver {
-        state.shared.lock().await.driver_connected = false;
+    {
+        let mut shared = state.shared.lock().await;
+        if is_driver {
+            shared.driver_connected = false;
+        }
+        shared.clients -= 1;
+        state.clients_tx.send_replace(shared.clients > 0);
     }
     broadcast_targets.lock().await.retain(|t| !t.same_channel(&out_tx));
 }
@@ -295,4 +322,78 @@ fn random_code() -> String {
     const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let mut rng = rand::thread_rng();
     (0..6).map(|_| CHARS[rng.gen_range(0..CHARS.len())] as char).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_tungstenite::tungstenite::Message as WsMessage;
+
+    async fn connect_client(port: u16) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+        let url = format!("ws://127.0.0.1:{port}/ws");
+        let mut last_err = None;
+        for _ in 0..50 {
+            match tokio_tungstenite::connect_async(&url).await {
+                Ok((mut ws, _)) => {
+                    let hello = serde_json::to_string(&ClientMessage::Connect { as_viewer: false, view_code: None }).unwrap();
+                    ws.send(WsMessage::Text(hello)).await.unwrap();
+                    return ws;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }
+        }
+        panic!("kunde inte ansluta till servern: {last_err:?}");
+    }
+
+    /// `clients_connected` styr om robotd håller Car_Client — den måste bli
+    /// true när en klient ansluter och false igen när den kopplar ner.
+    #[tokio::test]
+    async fn klientnarvaro_foljer_anslutningen() {
+        let port = 39_000 + (std::process::id() % 1000) as u16;
+        let mut handles = spawn(format!("127.0.0.1:{port}"));
+        assert!(!*handles.clients_connected.borrow());
+
+        let mut ws = connect_client(port).await;
+        tokio::time::timeout(Duration::from_secs(2), handles.clients_connected.wait_for(|c| *c))
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Status från huvudloopen ska nå klienten.
+        let status = StatusUpdate {
+            speed_kmh: Some(1.0),
+            battery_percent: Some(80.0),
+            gps_fix: false,
+            vesc_temps_c: vec![],
+            last_error: None,
+            link_quality: relay_protocol::LinkQuality::Green,
+            battery_voltage: Some(52.6),
+            vescs_responding: vec![28, 36, 76],
+            vescs_expected: vec![28, 36, 76],
+        };
+        handles.status_broadcast.send(status).await.unwrap();
+        let got = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(Ok(WsMessage::Text(t))) = ws.next().await {
+                    if let Ok(RobotMessage::Status(s)) = serde_json::from_str::<RobotMessage>(&t) {
+                        return s;
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(got.battery_voltage, Some(52.6));
+        assert_eq!(got.vescs_responding, vec![28, 36, 76]);
+
+        ws.close(None).await.unwrap();
+        drop(ws);
+        tokio::time::timeout(Duration::from_secs(2), handles.clients_connected.wait_for(|c| !*c))
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }

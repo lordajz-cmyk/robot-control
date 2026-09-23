@@ -124,6 +124,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     vesc_temps_c: vec![32.0, 33.5, 29.0],
                     last_error: None,
                     link_quality: LinkQuality::Green,
+                    battery_voltage: Some(42.0 + 12.4 * battery_percent / 100.0),
+                    vescs_responding: vec![28, 36, 76],
+                    vescs_expected: vec![28, 36, 76],
                 };
                 if send(&mut ws_tx, &RobotMessage::Status(status)).await.is_err() {
                     break;

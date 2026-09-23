@@ -132,6 +132,43 @@ pub fn parse_vesc_status_reply(payload: &[u8]) -> Option<Vec<VescStatusEntry>> {
     )
 }
 
+/// `CMD_GET_STATE` (120): styrkortets tillstånd, samma fråga som RControlStation
+/// pollar. Vi läser bara fart, batterispänning, temperatur och felkod.
+pub const CMD_GET_STATE: u8 = 120;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoardState {
+    /// m/s, från styrkortets positionsberäkning.
+    pub speed_ms: f32,
+    /// Batterispänning (VESC:ns v_in).
+    pub v_in: f32,
+    pub temp_mos: f32,
+    pub fault_code: u8,
+}
+
+pub fn make_state_request(car_id: u8) -> Vec<u8> {
+    vec![car_id, CMD_GET_STATE]
+}
+
+/// Svarsformat enligt `commands.c` (CMD_GET_STATE): `[id][120][fw maj][fw min]`
+/// och sedan float32 som i32 big-endian (värde*skala): roll, pitch, yaw,
+/// accel×3, gyro×3, mag×3, px, py, speed (1e6), v_in (1e6), temp_mos (1e6),
+/// felkod (u8), … Resten av paketet bryr vi oss inte om.
+pub fn parse_state_reply(payload: &[u8]) -> Option<BoardState> {
+    if payload.len() < 73 || payload[1] != CMD_GET_STATE {
+        return None;
+    }
+    let f = |at: usize, scale: f32| {
+        i32::from_be_bytes([payload[at], payload[at + 1], payload[at + 2], payload[at + 3]]) as f32 / scale
+    };
+    Some(BoardState {
+        speed_ms: f(60, 1e6),
+        v_in: f(64, 1e6),
+        temp_mos: f(68, 1e6),
+        fault_code: payload[72],
+    })
+}
+
 /// `CMD_RC_CONTROL_ADV` (125): samma kommando som RControlStation skickar när
 /// dosan styr (`PacketInterface::setRcControlAdvanced`). Kortet slår upp alla
 /// aktuatorer med den aktiviteten (sparade på kortet via Confcommon → Write)
@@ -204,6 +241,26 @@ mod tests {
         // -0.15 -> -1500 = 0xFFFFFA24
         assert_eq!(make_rc_control_adv(4, 11, -0.15), vec![4, 125, 11, 0xFF, 0xFF, 0xFA, 0x24]);
         assert_eq!(make_rc_control_adv(4, 10, 0.0), vec![4, 125, 10, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn tillstandssvar_tolkas() {
+        let mut p = vec![4, CMD_GET_STATE, 10, 5];
+        for _ in 0..14 {
+            p.extend(0i32.to_be_bytes()); // roll .. py
+        }
+        p.extend(1_250_000i32.to_be_bytes()); // speed 1.25 m/s
+        p.extend(52_600_000i32.to_be_bytes()); // v_in 52.6 V
+        p.extend(31_500_000i32.to_be_bytes()); // temp 31.5 °C
+        p.push(0); // felkod
+        p.extend([0u8; 40]); // resten
+        let st = parse_state_reply(&p).unwrap();
+        assert!((st.speed_ms - 1.25).abs() < 1e-4);
+        assert!((st.v_in - 52.6).abs() < 1e-4);
+        assert!((st.temp_mos - 31.5).abs() < 1e-4);
+        assert_eq!(st.fault_code, 0);
+        assert_eq!(parse_state_reply(&p[..60]), None); // för kort
+        assert_eq!(parse_state_reply(&[4, 140]), None);
     }
 
     #[test]

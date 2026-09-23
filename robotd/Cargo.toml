@@ -21,3 +21,6 @@ ssd1306 = "0.10"         # OLED-display — 0.8 krockade med linux-embedded-hal
                          # kompileringsfel, runda 3-testet 2026-09-20).
                          # 0.10 använder embedded-hal 1.0 rakt igenom, matchar.
 embedded-graphics = "0.8"
+
+[dev-dependencies]
+tokio-tungstenite = "0.21"
