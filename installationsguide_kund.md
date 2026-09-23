@@ -14,9 +14,9 @@ och det mesta av tiden väntar du bara.
 > | | |
 > |---|---|
 > | Robotens adress | `192.168.200.___` |
-> | Filen för nätverket (WireGuard) | `__________.conf` |
-> | Så här fick du programmet | ☐ USB-minne ☐ nedladdning ☐ vi skickade det till din dator |
-> | Hjälp om något krånglar | Namn: __________ Telefon: __________ |
+> | Din dators nummer i nätverket (sista siffran) | `___` |
+> | E-post för hjälp och för steg 3 | **maprocontroll@outlook.com** |
+> | Telefon om något krånglar | __________ |
 
 ---
 
@@ -26,9 +26,8 @@ Bocka av att du har det här:
 
 - ☐ En dator med **Ubuntu** (version 22.04 eller nyare) och internet.
 - ☐ Ditt **lösenord** till datorn. Datorn frågar efter det några gånger.
-- ☐ Mappen **robot-control** från oss (programmet).
-- ☐ **Nätverksfilen** från oss (slutar på `.conf`). Den gör att din dator hittar roboten.
 - ☐ En **PS4-handkontroll** och en USB-sladd till den.
+- ☐ Möjlighet att skicka ett **mejl** (i steg 3).
 
 ---
 
@@ -49,28 +48,82 @@ texten, kopiera med **Ctrl + C** och klistra in i terminalen med
 
 ---
 
-## Steg 2: Lägg programmet på rätt plats 📁
+## Steg 2: Hämta programmet 📥
 
-Mappen **robot-control** ska ligga i din **hemmapp**. Hemmappen är den som heter som
-ditt användarnamn, och den öppnas när du klickar på **Filer** (Hem).
+Programmet hämtas från internet till en mapp som heter **robot-control** i din hemmapp.
+Klistra in raderna, en i taget, och tryck Enter efter varje:
 
-- **Fick du programmet på USB-minne eller som nedladdning?** Kopiera mappen
-  `robot-control` till hemmappen. Är det en zip-fil: högerklicka → **Packa upp här**
-  och flytta sedan mappen till hemmappen.
-- **Skickade vi det direkt till din dator?** Då ligger det redan rätt.
+```
+sudo apt install -y git
+```
+```
+git clone https://github.com/lordajz-cmyk/robot-control.git ~/robot-control
+```
 
-Kontrollera att det blev rätt. Klistra in i terminalen:
+Kontrollera att det blev rätt:
 ```
 ls ~/robot-control
 ```
-✅ **Rätt:** du ser en lista med bland annat `client`, `robotd` och `scripts`.
-❌ **Fel:** står det `Det finns ingen sådan fil eller katalog` ligger mappen på fel plats.
+✅ **Rätt:** du ser en lista med bland annat `client`, `robotd`, `scripts` och `wireguard`.
+❌ **Fel:** står det `Det finns ingen sådan fil eller katalog` gick hämtningen inte igenom.
+Kontrollera att datorn har internet och försök igen.
 
 ---
 
-## Steg 3: Installera programmet ⚙️
+## Steg 3: Robotens nätverk (WireGuard) och ett mejl till oss 🔐
 
-Klistra in de här två raderna, en i taget, och tryck Enter efter varje:
+Roboten och din dator pratar med varandra genom ett eget, säkert nätverk som heter
+**WireGuard**. Din dator får en egen nyckel, och **vi** måste lägga in den hos oss innan
+din dator släpps in. Därför skickar du ett mejl i slutet av det här steget.
+
+### 3.1 Kör WireGuard-installationen
+```
+cd ~/robot-control/wireguard
+```
+```
+sudo bash wireguard.sh
+```
+
+Programmet ställer fyra frågor. Svara så här:
+
+| Frågan | Svara |
+|---|---|
+| `1. Ange önskat namn för den här enheten` | Ditt företags eller ditt namn, till exempel `Andersson_PC`. Inga mellanslag. |
+| `Ange bara sista siffran X` | **Siffran från rutan överst** ("Din dators nummer"). **Bara siffran**, till exempel `23`. |
+| `Vill du anpassa serverns IP, port eller Public Key? (y/N)` | Tryck bara **Enter** (betyder nej). |
+| `Aktivera nu? (j/n)` | Skriv **j** och tryck Enter. |
+
+### 3.2 Mejla oss din nyckel 📧
+
+I slutet står det en blå text: **"DETTA MÅSTE DU GÖRA PÅ SERVERN"**. Det gör **inte du**,
+det gör vi. Du ska bara mejla oss det som står i den gröna rutan under.
+
+Klistra in den här raden. Den visar precis det vi behöver:
+```
+echo "Namn: $(hostname)"; sudo grep -E "Address" /etc/wireguard/wg0.conf; echo "PublicKey = $(sudo cat /etc/wireguard/public.key)"
+```
+Det ser ut ungefär så här:
+```
+Namn: andersson-dator
+Address = 192.168.200.23/24
+PublicKey = AbCdEf123...lång rad med bokstäver...=
+```
+
+**Markera de tre raderna**, kopiera med **Ctrl + Shift + C** och klistra in dem i ett mejl till:
+
+> **maprocontroll@outlook.com**
+> Ämne: *WireGuard – ny dator* och ditt företagsnamn
+
+> ⚠️ Skicka **bara** det som kommandot ovan visar. Om du någon gång ser ordet
+> **PrivateKey**: den nyckeln är hemlig och ska **aldrig** skickas till någon.
+
+Vi svarar när din dator är inlagd. **Fortsätt med steg 4 och 5 medan du väntar.**
+
+---
+
+## Steg 4: Installera programmet ⚙️
+
+Klistra in raderna, en i taget:
 ```
 cd ~/robot-control
 ```
@@ -87,40 +140,6 @@ Nu händer det här:
 
 ---
 
-## Steg 4: Koppla datorn till robotens nätverk 🔐
-
-Roboten och din dator pratar med varandra genom ett eget säkert nätverk som heter
-**WireGuard**. Nätverksfilen från oss innehåller allt som behövs.
-
-1. Lägg nätverksfilen i mappen **Hämtningar**. (Heter mappen **Downloads** hos dig,
-   byt `Hämtningar` mot `Downloads` i raderna nedan.)
-2. Klistra in de här raderna, en i taget. Byt `DITTFILNAMN` mot filens namn från rutan
-   överst, till exempel `kund1.conf`:
-
-```
-sudo apt install -y wireguard resolvconf
-```
-```
-sudo cp ~/Hämtningar/DITTFILNAMN /etc/wireguard/wg0.conf
-```
-```
-sudo systemctl enable --now wg-quick@wg0
-```
-
-3. Testa att din dator når roboten. **Roboten måste vara påslagen.** Byt `___` mot
-   siffrorna i robotens adress:
-```
-ping -c 3 192.168.200.___
-```
-✅ **Rätt:** tre rader som slutar med `ms`, till exempel `tid=35 ms`.
-❌ **Fel:** står det `100% packet loss`? Vänta två minuter (roboten kanske inte har startat
-klart) och försök igen. Hjälper inte det, ring oss.
-
-> Det här steget görs bara **en gång**. Efter det kopplar datorn upp sig av sig själv
-> varje gång den startar.
-
----
-
 ## Steg 5: Koppla in handkontrollen 🎮
 
 **Enklast:** sätt i USB-sladden mellan handkontrollen och datorn. Klart!
@@ -133,7 +152,20 @@ klart) och försök igen. Hjälper inte det, ring oss.
 
 ---
 
-## Steg 6: Starta Robotstyrning 🚀
+## Steg 6: Testa kontakten med roboten 📡
+
+**Vänta tills du har fått vårt svar på mejlet.** Slå sedan på roboten och vänta två minuter.
+Byt `___` mot siffrorna i **robotens adress** (rutan överst):
+```
+ping -c 3 192.168.200.___
+```
+✅ **Rätt:** tre rader som slutar med `ms`, till exempel `tid=35 ms`.
+❌ **Fel:** står det `100% packet loss`? Vänta två minuter till (roboten kanske inte har
+startat klart) och försök igen. Hjälper inte det, mejla eller ring oss.
+
+---
+
+## Steg 7: Starta Robotstyrning 🚀
 
 Öppna en **ny** terminal (Ctrl + Alt + T) och skriv:
 ```
@@ -146,8 +178,8 @@ Programmet finns också i programmenyn. Sök på **Robotstyrning**.
    tryck **Enter**.
 3. Nu ser du kamerabilden från roboten. 🎉
 
-Nästa gång räcker det med steg 6. Adressen finns sparad under **Tidigare anslutna**,
-så du kan klicka på den.
+**Nästa gång räcker det med steg 7.** Adressen finns sparad under **Tidigare anslutna**,
+så du kan klicka på den. WireGuard startar av sig själv när datorn startar.
 
 ---
 
@@ -179,13 +211,23 @@ så du kan klicka på den.
   AKTIVERA måste tryckas igen.
 - Om nätverket försvinner stannar roboten **av sig själv** inom en halv sekund.
 - Om handkontrollen tappar kontakten låses körningen av sig själv.
-- Står du still i 5 minuter låses körningen av sig själv.
+- Rör du inte spakarna på 5 minuter låses körningen av sig själv.
 
 ### Bra att veta
 - **Max** bestämmer hur fort roboten får köra. Lågt värde = lugnt. Programmet kommer ihåg
   det du ställer in.
 - **CAM** betyder att du kör med kameran. **LOS** betyder att du ser roboten med egna ögon.
   I LOS-läget kan du köra även om kameran inte fungerar.
+- **⚙ Inställningar** behöver du normalt inte röra. Där ligger robotens motorinställningar.
+
+---
+
+## Uppdatera programmet 🔄
+
+När vi säger att det finns en ny version, klistra in:
+```
+cd ~/robot-control && git pull && bash scripts/install_client.sh
+```
 
 ---
 
@@ -193,14 +235,15 @@ så du kan klicka på den.
 
 | Det här händer | Gör så här |
 |---|---|
-| `Robotstyrning: kommandot finns inte` | Stäng terminalen och öppna en ny. Hjälper inte det: gör om steg 3. |
-| "Anslutningen bröts" eller inget händer när du ansluter | Är roboten påslagen? Gör testet i steg 4.3 (`ping`). |
-| "Car_Client upptagen" | Någon annan är ansluten till roboten med ett annat program. Vänta eller ring oss. |
+| `Robotstyrning: kommandot finns inte` | Stäng terminalen och öppna en ny. Hjälper inte det: gör om steg 4. |
+| `git: kommandot finns inte` | Du hoppade över första raden i steg 2. Kör `sudo apt install -y git`. |
+| "Anslutningen bröts" eller inget händer när du ansluter | Är roboten påslagen? Har du fått vårt svar på mejlet? Gör testet i steg 6. |
+| "Car_Client upptagen" | Någon annan är ansluten till roboten med ett annat program. Vänta eller hör av dig. |
 | "Ingen dosa ansluten" | Sätt i USB-sladden till handkontrollen, eller tryck på PS-knappen. |
 | AKTIVERA går inte att trycka | Läs texten under knappen. Saknas kameran: tryck på **📷 CAM** så att det står **LOS**. |
 | **VESC: 0/3 svarar** | Motorstyrningen har inte ström. Kontrollera batteriet och huvudbrytaren. |
 | Roboten går trögt | Höj **Max** lite i taget. |
-| Något annat | Ring oss. Ta gärna en bild på skärmen (tryck **Print Screen**). |
+| Något annat | Mejla **maprocontroll@outlook.com** eller ring oss. Ta gärna en bild på skärmen (tryck **Print Screen**). |
 
 ---
 
