@@ -1,3 +1,20 @@
+# ⚠️ 2026-09-24: RobAnt-paketet (Pi + SD-kort + styrkort + Teltonika RUT951) SKICKAS TILL KUND
+
+Hela den testade elektroniken som suttit i RobAnt skickas till en kund i dag, oförändrad.
+**192.168.200.10 ("robant", "RobAnt 3" i RControlStation) är från och med nu KUNDENS robot.**
+- Styrkortets aktuatorer: VESC 90 + 87 = Fart, 42 = Styrning, Duty (skrivet och kontrolläst
+  2026-09-24 10:05). Rad 4: VESC 0 Nödstopp (ofarlig rest). RobAnts egna motorer (28/36/76)
+  kör alltså INTE med det här kortet.
+- robotd på Pi:n: `known_vesc_ids` = [90, 87, 42] (10:10). `vesc_profile.roller` har gamla
+  28/36/76 kvar — används inte för körning.
+- Internet: Teltonika RUT951 med SIM följer med, kabel till Pi:n, som hemma.
+- **Kvar på distans:** kundens egen Swepos-inloggning och position i `car_rtk.service` på Pi:n
+  (nu användarens konto och `-p 60.063221 18.078982`). Kundens dator som WireGuard-peer.
+- RobAnt får en NY Pi + nytt styrkort (hårdvaran finns) → installeras med `scripts/ny_robot.sh`
+  och får en annan IP än .10.
+
+---
+
 # Var vi slutade — 2026-09-23, eftermiddag: VÅRT EGET PROGRAM KÖR ROBOTEN 🎉
 
 Läs den här först. Installation: se **installationsguide.md**.
