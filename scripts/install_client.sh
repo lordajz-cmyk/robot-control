@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
-# install_client.sh — installerar robotstyrning (klienten), relay-server och
-# mock-robotd på en Ubuntu-dator. Körs PÅ den dator ni ska styra roboten
-# från (eller på vilken Ubuntu-dator som helst ni vill testa/leka på).
+# install_client.sh — installerar Robotstyrning (klienten) och mock-robotd på
+# en Ubuntu-dator. Körs på datorn man styr roboten från, som vanlig användare
+# (skriptet frågar själv efter sudo för systempaketen):
 #
 #   bash scripts/install_client.sh
 #
 # Vad den gör:
-#   1. Installerar systempaket klienten (egui/eframe) och GStreamer-video
-#      (för senare, ännu inte ihopkopplat) behöver
+#   1. Installerar systempaket klienten behöver (fönster, dosa, videoavkodning)
 #   2. Installerar Rust via rustup om det saknas
-#   3. Bygger klienten (robotstyrning), relay-server och mock-robotd
-#      (release-läge)
-#   4. Lägger binärerna i ~/.local/bin (ingen sudo/root behövs för det här
-#      skriptet, till skillnad från install_pi.sh)
-#   5. Skapar en skrivbordsgenväg för klienten
+#   3. Bygger robotstyrning och mock-robotd (release)
+#   4. Genvägar i ~/.local/bin: robotstyrning, Robotstyrning, mock-robotd
+#      (länkar till det byggda programmet) och ~/.local/bin i PATH
+#   5. Programmenyn: "Robotstyrning"
 #
-# Efter installation, se README.md ("Testköra hela systemet utan hårdvara")
-# för hur man kör klienten mot antingen mock-robotd (ingen hårdvara behövs)
-# eller en riktig robot.
+# Säkert att köra igen efter git pull; då byggs den nya versionen och
+# genvägarna pekar redan rätt. Se installationsguide.md.
 
 set -euo pipefail
 

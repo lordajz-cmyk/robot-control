@@ -183,6 +183,37 @@ så du kan klicka på den. WireGuard startar av sig själv när datorn startar.
 
 ---
 
+## Steg 8 (om du vill): RControlStation 🗺️
+
+**RControlStation** är ett annat program för roboten, med karta och GPS. Du behöver det
+inte för att köra, men vill du ha det installerar du det så här. Klistra in raderna,
+en i taget:
+```
+git clone https://github.com/lordajz-cmyk/rise_sdvp.git ~/rise_sdvp
+```
+```
+cd ~/rise_sdvp
+```
+```
+sudo bash install_dator.sh
+```
+- Datorn frågar efter ditt lösenord.
+- När den frågar `Kompilera RControlStation? (y/n)` skriver du **y** och trycker Enter.
+- **Det tar 10–20 minuter.** ☕
+
+✅ **Klart** när det står `GRATULERAR! RCONTROLSTATION ÄR NU BYGGD OCH KLAR!`
+
+Starta det genom att skriva i valfri terminal:
+```
+RControlStation
+```
+Handkontrollen är redan inställd: vänster spak upp/ner = kör, höger spak åt sidan = sväng.
+
+> ⚠️ **Robotstyrning och RControlStation kan inte vara anslutna till roboten samtidigt.**
+> Stäng det ena innan du ansluter med det andra.
+
+---
+
 ## Så kör du roboten 🕹️
 
 ### Första gången: gör så här
@@ -238,7 +269,8 @@ cd ~/robot-control && git pull && bash scripts/install_client.sh
 | `Robotstyrning: kommandot finns inte` | Stäng terminalen och öppna en ny. Hjälper inte det: gör om steg 4. |
 | `git: kommandot finns inte` | Du hoppade över första raden i steg 2. Kör `sudo apt install -y git`. |
 | "Anslutningen bröts" eller inget händer när du ansluter | Är roboten påslagen? Har du fått vårt svar på mejlet? Gör testet i steg 6. |
-| "Car_Client upptagen" | Någon annan är ansluten till roboten med ett annat program. Vänta eller hör av dig. |
+| "Car_Client upptagen" | RControlStation (eller någon annan) är ansluten till roboten. Stäng det först. |
+| `RControlStation: kommandot finns inte` | Stäng terminalen och öppna en ny. Hjälper inte det: gör om steg 8. |
 | "Ingen dosa ansluten" | Sätt i USB-sladden till handkontrollen, eller tryck på PS-knappen. |
 | AKTIVERA går inte att trycka | Läs texten under knappen. Saknas kameran: tryck på **📷 CAM** så att det står **LOS**. |
 | **VESC: 0/3 svarar** | Motorstyrningen har inte ström. Kontrollera batteriet och huvudbrytaren. |
