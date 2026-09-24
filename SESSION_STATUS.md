@@ -57,6 +57,24 @@ vid körning, 0 direkt vid stopp, 0 var 1 s i vila. Watchdog 150/400 ms, ramper,
 - sudo på Pi:n kräver lösenord → användaren kör sådant i en egen terminal (inte `!`).
 - Claude Code blockerar SSH-skrivningar mot Pi:n; läsning (journalctl, cat, ss) går.
 
+## GPS/RTK-kedjan på RobAnt (undersökt 2026-09-24, inget ändrat)
+Kedja: u-blox (`/dev/ublox`) → Car_Client → TCP 8210 (UBX) → rtkrcv (`screen rtklib`,
+`Linux/PI/rtkrcv_arm/rover_ublox.conf`) + Swepos via `car_rtk.service` (str2str → TCP 1234)
+→ NMEA på TCP 2948 → RControlStation ("Lösning"). robotd/robotstyrning använder inte GPS.
+- **"Ingen GPS-data" inomhus efter strömavbrott = kallstart, inget fel.** u-bloxen glömmer tid
+  och banor utan ström; RAWX hade 0 mätningar och GPS-vecka 0. Inne blev det SPP först efter
+  en natt. Ute: RTK direkt.
+- **Mätt ute 2026-09-24:** 27 satelliter (GPS 11, GLONASS 8, BeiDou 5, Galileo 3), 43 mätningar,
+  C/N0 medel 36 (15–49) dB-Hz, 5 Hz. rtkrcv: RTK FLOAT/FIX växlande, **bara 7 satelliter
+  används**, HDOP 1,0, korrektionsålder 1 s.
+- **Idé till senare (stabilare FIX nära hus/träd):** (1) Swepos-strömmen saknar BeiDou —
+  `str2str -msg 1005,1074,1084,1094,1230` har inte 1124, så BeiDou kan inte användas för RTK;
+  lägg till 1124 om Swepos-mountpointen har det. (2) Se över elevations-/SNR-mask m.m. i
+  `rover_ublox.conf` som sållar bort de flesta satelliterna.
+- Så lyssnar man utan att störa: `timeout 4 bash -c "exec 3<>/dev/tcp/127.0.0.1/8210; cat <&3"`
+  (UBX, tål flera lyssnare) och samma mot 2948 (NMEA från rtkrcv). **Inte** mot 8300
+  (Car_Client tar bara en klient där).
+
 ## Kvar
 - Firmware skriver "Activity %d -> %d actuator(s)" per kommando (commands.c) — tysta.
 - `gps_fix` i status är alltid false (ingen NMEA-tolkning, medvetet, se PROJECT_SPEC §10).
