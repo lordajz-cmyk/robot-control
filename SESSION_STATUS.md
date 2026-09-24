@@ -57,6 +57,19 @@ vid körning, 0 direkt vid stopp, 0 var 1 s i vila. Watchdog 150/400 ms, ramper,
 - sudo på Pi:n kräver lösenord → användaren kör sådant i en egen terminal (inte `!`).
 - Claude Code blockerar SSH-skrivningar mot Pi:n; läsning (journalctl, cat, ss) går.
 
+## Installationsskripten för kunder (2026-09-24)
+Kunden kör två skript: `robot-control/scripts/install_client.sh` (Robotstyrning) och
+`rise_sdvp/install_dator.sh` (RControlStation, `sudo`). Båda testade från ren klon från GitHub:
+bygger utan fel. Genvägar: `Robotstyrning`/`robotstyrning` (~/.local/bin) och `RControlStation`
+(/usr/local/bin). Se `installationsguide_kund.md` (steg 1–8).
+- **Rättat i RControlStation (rise_sdvp, pushat):** en NY databas fick kontroll-id 1–6, så dosan
+  skickade aktivitet 4/5 i stället för 10/11 och inget rörde sig. Nu fasta id 7–12 och
+  standardbindningar 5→10 (vänster upp/ner = Speed), 8→11 (höger sidled = Steering). Påverkar
+  bara nya databaser; testat med första start utan databas. `data.db` ligger (med rätta) inte i
+  git — den innehåller användarens fält/rutter.
+- RControlStation sparar dosa-inställningar efter varje rad vid inläsning och raderar tillfälligt
+  de andra ("Cleared controller …" i loggen). Slutresultatet blir rätt; gammalt beteende, orört.
+
 ## GPS/RTK-kedjan på RobAnt (undersökt 2026-09-24, inget ändrat)
 Kedja: u-blox (`/dev/ublox`) → Car_Client → TCP 8210 (UBX) → rtkrcv (`screen rtklib`,
 `Linux/PI/rtkrcv_arm/rover_ublox.conf`) + Swepos via `car_rtk.service` (str2str → TCP 1234)
