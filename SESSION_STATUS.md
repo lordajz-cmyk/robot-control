@@ -34,7 +34,7 @@ upphissade RobAnt, verifierat av användaren ("DET FUNKAR!", max 0,45 känns som
   2. Styrkortet svarade inte efter omstart: Car_Client öppnade `/dev/vehicle` en gång till
      som RTCM-serieport (`inputRtcm = true` i main.cpp) och läste bort styrkortets svar,
      slumpmässigt beroende på uppstarten. Standard nu `false` (som i Vedders original), i
-     rise_sdvp (lokal commit ffcab51, **ej pushad**, https kräver användarens inlogg),
+     rise_sdvp (commit ffcab51, pushad 2026-09-24 via SSH-adressen; origin är https),
      robot-control/rise_sdvp och på RobAnt (ombyggd 15:29).
 
 ## Hur robotd styr
