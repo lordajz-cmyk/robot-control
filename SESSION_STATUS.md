@@ -62,6 +62,11 @@ Kunden kör två skript: `robot-control/scripts/install_client.sh` (Robotstyrnin
 `rise_sdvp/install_dator.sh` (RControlStation, `sudo`). Båda testade från ren klon från GitHub:
 bygger utan fel. Genvägar: `Robotstyrning`/`robotstyrning` (~/.local/bin) och `RControlStation`
 (/usr/local/bin). Se `installationsguide_kund.md` (steg 1–8).
+- **Provinstallerat från noll i tomma behållare (Podman), som kundguiden steg 2, 4 och 8:
+  Ubuntu 22.04 OCH 24.04 — allt OK**, inga paket saknades, genvägarna fungerar i ny terminal.
+  Testskriptet: användare `kund` med sudo, `git clone` från GitHub, `install_client.sh`,
+  `sudo bash install_dator.sh`. Kör så här igen före större utskick. (Kräver `--network host`;
+  inte testat: fönster/dosa, eftersom behållaren saknar skärm.)
 - **Rättat i RControlStation (rise_sdvp, pushat):** en NY databas fick kontroll-id 1–6, så dosan
   skickade aktivitet 4/5 i stället för 10/11 och inget rörde sig. Nu fasta id 7–12 och
   standardbindningar 5→10 (vänster upp/ner = Speed), 8→11 (höger sidled = Steering). Påverkar
