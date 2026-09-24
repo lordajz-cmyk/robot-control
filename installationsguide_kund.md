@@ -14,6 +14,7 @@ och det mesta av tiden väntar du bara.
 > | | |
 > |---|---|
 > | Robotens adress | `192.168.200.___` |
+> | Robotens namn i RControlStation (steg 8) | __________ |
 > | Din dators nummer i nätverket (sista siffran) | `___` |
 > | E-post för hjälp och för steg 3 | **maprocontroll@outlook.com** |
 > | Telefon om något krånglar | __________ |
@@ -207,7 +208,22 @@ Starta det genom att skriva i valfri terminal:
 ```
 RControlStation
 ```
-Handkontrollen är redan inställd: vänster spak upp/ner = kör, höger spak åt sidan = sväng.
+
+**Ansluta till roboten i RControlStation:**
+1. **Stäng Robotstyrning först** (se varningen nedan).
+2. Till vänster finns en lista med robotar (**Name** och **IP Address**). Klicka på **din
+   robot** (namnet står i rutan överst i den här guiden).
+3. Tryck på knappen **längst till vänster under listan**, den med kontakt-ikonen. Håller du
+   musen över den står det *Connect to selected machine*.
+4. Efter några sekunder visas roboten, och batteri och GPS börjar uppdateras.
+
+**Står inte din robot i listan?** Tryck på knappen **längst till höger** under listan
+(uppdatera). Syns den fortfarande inte: klicka i textrutan under listan, radera det som
+står där, skriv **robotens adress** (till exempel `192.168.200.12`) och tryck på knappen
+**Text**.
+
+Handkontrollen är redan inställd och påslagen: vänster spak upp/ner = kör, höger spak åt
+sidan = sväng. **Max** (hur fort den får köra) står på `0.35`.
 
 > ⚠️ **Robotstyrning och RControlStation kan inte vara anslutna till roboten samtidigt.**
 > Stäng det ena innan du ansluter med det andra.

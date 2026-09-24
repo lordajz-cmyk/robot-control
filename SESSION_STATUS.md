@@ -75,6 +75,20 @@ bygger utan fel. Genvägar: `Robotstyrning`/`robotstyrning` (~/.local/bin) och `
 - RControlStation sparar dosa-inställningar efter varje rad vid inläsning och raderar tillfälligt
   de andra ("Cleared controller …" i loggen). Slutresultatet blir rätt; gammalt beteende, orört.
 
+## RControlStation hos kunder — beslut 2026-09-24
+- RControlStation hämtar gårdar, fält, rutter och maskiner från **webbservern på VPN-servern**
+  (`http://192.168.200.1:8080`, koden i `rise_sdvp/web/`), inte från lokala `data.db`. Kunder
+  ser därför samma exempel som användaren direkt när VPN:et är uppe. Ingen exempeldatabas behövs.
+- **Användarens beslut:** att det fungerar direkt går före sekretess. Säkerhetsfrågorna nedan är
+  kända och **medvetet lämnade som de är** — ta inte upp dem igen om inte användaren gör det:
+  NTRIP-lösenord (Swepos m.fl.) följer med i `/all_farms`, alla kunder ser samma data och kan
+  ändra (t.ex. `/remove_machine`), och WireGuard-klienter når troligen hela 192.168.200.0/24.
+- **Före utskick:** lägg in kundens robot (namn + IP) i maskinlistan på servern, så finns den i
+  RControlStation. Fyll i robotens namn i rutan i `installationsguide_kund.md`.
+- Max i RControlStation är nu 0,35 som standard (var 0,15), pushat i rise_sdvp.
+- Kundguiden steg 8 beskriver anslutningen: markera roboten i listan → knappen längst till
+  vänster (Connect to selected machine); annars IP i textrutan + knappen "Text".
+
 ## GPS/RTK-kedjan på RobAnt (undersökt 2026-09-24, inget ändrat)
 Kedja: u-blox (`/dev/ublox`) → Car_Client → TCP 8210 (UBX) → rtkrcv (`screen rtklib`,
 `Linux/PI/rtkrcv_arm/rover_ublox.conf`) + Swepos via `car_rtk.service` (str2str → TCP 1234)
