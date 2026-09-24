@@ -86,6 +86,13 @@ bygger utan fel. Genvägar: `Robotstyrning`/`robotstyrning` (~/.local/bin) och `
 - **Före utskick:** lägg in kundens robot (namn + IP) i maskinlistan på servern, så finns den i
   RControlStation. Fyll i robotens namn i rutan i `installationsguide_kund.md`.
 - Max i RControlStation är nu 0,35 som standard (var 0,15), pushat i rise_sdvp.
+- **Kartan visar rätt direkt vid anslutning (rise_sdvp ed0b30d, verifierat på RobAnt 2026-09-24):**
+  vid varje anslutning sätts nollpunkten (karta + styrkort) på robotens första GPS-position från
+  rtkrcv (även SPP), kartan centreras ~100 m och Follow för bilen slås på. Tidigare låg styrkortets
+  nollpunkt i Uppsala och roboten ritades mil fel (östled ~dubbelt) om man inte valde gård.
+  Gårdsval gäller till nästa anslutning. Kartan startar på senaste position (QSettings
+  RControlStation/karta). Användarens val: nollpunkt vid VARJE anslutning (sparade rutter kan
+  hamna några m fel om roboten startar på annat ställe — välj gården först för sparade rutter).
 - Kundguiden steg 8 beskriver anslutningen: markera roboten i listan → knappen längst till
   vänster (Connect to selected machine); annars IP i textrutan + knappen "Text".
 
