@@ -41,7 +41,11 @@ echo -e "Installationsmapp: ${BOLD}$DIR${NC}\n"
 # 📦 STEG 1: Paketinstallation med avancerad felrapportering
 # ------------------------------------------------------------------------------
 echo -e "${YELLOW}${BOLD}[Steg 1/5] Installerar Linux-paket...${NC}"
-apt update
+# Vänta upp till 5 min om apt är upptaget (t.ex. automatiska uppdateringar efter
+# uppstart), och städa upp en tidigare avbruten installation (strömavbrott o.d.).
+APT="apt-get -y -o DPkg::Lock::Timeout=300"
+dpkg --configure -a
+$APT update
 
 # Listan på alla baspaket som behövs på Pi:n
 PACKAGES=(
@@ -68,7 +72,7 @@ fi
 
 # Försök ladda ner och installera alla på en gång först
 echo -e "Försöker installera alla paket på en gång..."
-if apt install -y "${PACKAGES[@]}" &>/dev/null; then
+if $APT install "${PACKAGES[@]}" &>/dev/null; then
   echo -e "${GREEN}✅ Alla Linux-paket installerades framgångsrikt!${NC}\n"
 else
   echo -e "${YELLOW}⚠️ Något paket gick inte att installera på en gång. Testar individuellt för att hitta felet...${NC}"
@@ -81,10 +85,11 @@ else
     fi
     
     # Försök installera paketet individuellt
-    if apt install -y "$pkg" &>/dev/null; then
+    if APT_OUT=$($APT install "$pkg" 2>&1); then
       echo -e "  [${GREEN}OK${NC}] Installerad: $pkg"
     else
       echo -e "  [${RED}FEL${NC}] Kunde inte installera: $pkg"
+      echo "$APT_OUT" | grep -E "^(E|Error|W):" | tail -3 | sed 's/^/        /'
       FAILED_PKGS+=("$pkg")
     fi
   done

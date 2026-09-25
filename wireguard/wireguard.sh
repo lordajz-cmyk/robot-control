@@ -31,7 +31,10 @@ echo -e "samt skapar en färdig konfigurationsfil för tunneln direkt!\n"
 # 📦 Installera paket
 # ------------------------------------------------------------------------------
 echo -e "${YELLOW}${BOLD}Installerar WireGuard och nätverksverktyg...${NC}"
-apt update
+# Vänta upp till 5 min om apt är upptaget, och städa upp en avbruten installation.
+APT="apt-get -y -o DPkg::Lock::Timeout=300"
+dpkg --configure -a
+$APT update
 
 # Inte resolvconf: vår wg0.conf har ingen DNS-rad, och på Raspberry Pi OS Trixie
 # tar resolvconf över /etc/resolv.conf och tömmer den (ingen DNS alls).
@@ -47,10 +50,11 @@ for pkg in "${PACKAGES[@]}"; do
     continue
   fi
   
-  if apt install -y "$pkg" &>/dev/null; then
+  if APT_OUT=$($APT install "$pkg" 2>&1); then
     echo -e "  [${GREEN}OK${NC}] Installerad: $pkg"
   else
     echo -e "  [${RED}FEL${NC}] Kunde inte installera: $pkg"
+    echo "$APT_OUT" | grep -E "^(E|Error|W):" | tail -3 | sed 's/^/        /'
     FAILED_PKGS+=("$pkg")
   fi
 done
