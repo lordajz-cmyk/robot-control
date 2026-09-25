@@ -66,6 +66,19 @@
 #define VESC_STEERING 76
 #define LOADING 8
 #define WHEEL_SENSOR                1
+// Hastighetsgivare ZF GS1001 på TX-kontakten (PA2): pulser från en stålskiva med hål.
+// PA2 får intern pull-up (givaren har öppen kollektor).
+#define WHEELSPEED_DIAM             0.30	// m, hjulets diameter — TODO: mät RobAnt
+#define WHEELSPEED_CNTS_PER_REV     13.0	// 13 hål i skivan (Ø170 mm), förutsatt att den sitter på hjulaxeln
+#define WHEELSPEED_PULLUP
+// Vinkelgivare DIS QR30N-360 (0–5 V för 0–360°) på RX-kontakten (PA3) via
+// spänningsdelare R1 = 12k (givare–S), R2 = 22k (S–GND). PA3 blir analog ingång
+// i stället för servoutgång. Vinkeln = (U - CENTER) * DEG_PER_MV.
+#define ANGLE_SENSOR_PA3
+#define ANGLE_SENSOR_DIVIDER        ((12.0 + 22.0) / 22.0)
+#define ANGLE_SENSOR_CENTER_MV      2500.0	// givarens spänning rakt fram — TODO: kalibrera
+#define ANGLE_SENSOR_DEG_PER_MV     0.072	// 360° / 5000 mV; byt tecken om vinkeln går åt fel håll
+#define ANGLE_SENSOR_MIN_MV         100.0	// under detta: magneten saknas/givarfel
 #endif
 
 #ifdef DRANGEN_GAMMAL

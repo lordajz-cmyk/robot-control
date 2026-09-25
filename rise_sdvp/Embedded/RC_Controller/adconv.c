@@ -20,6 +20,7 @@
 #include "conf_general.h"
 #include "terminal.h"
 #include "commands.h"
+#include "comm_can.h"
 
 // Settings
 #define VREFINT					1.21
@@ -32,6 +33,17 @@ static float vin_filter = 0.0;
 
 static void terminal_cmd_get_vin(int argc, const char **argv);
 
+#ifdef ANGLE_SENSOR_PA3
+// Vinkelgivaren på PA3 (ADC-kanal 3) ligger på plats 6 i sekvensen (samples[5]),
+// som annars var en dubblett av IN11.
+#define ANGLE_SAMPLE_INDEX		5
+extern float frontangle;
+extern uint16_t last_sensorvalue;
+static float angle_mv_filter = 0.0;
+static bool angle_sensor_ok = false;
+static void terminal_cmd_angle(int argc, const char **argv);
+#endif
+
 static void adccallback(ADCDriver *adcp, adcsample_t *buffer, size_t n) {
 	(void)adcp;
 	(void)buffer;
@@ -40,6 +52,12 @@ static void adccallback(ADCDriver *adcp, adcsample_t *buffer, size_t n) {
 	const float v_reg = (VREFINT * 4095.0) / (float)samples[6];
 	float sample = (samples[0] / 4095.0 * v_reg) * ((VIN_R1 + VIN_R2) / VIN_R2);
 	UTILS_LP_FAST(vin_filter, sample, 0.02);
+
+#ifdef ANGLE_SENSOR_PA3
+	// Givarens egen spänning (före spänningsdelaren) i mV
+	float angle_mv = (samples[ANGLE_SAMPLE_INDEX] / 4095.0 * v_reg) * ANGLE_SENSOR_DIVIDER * 1000.0;
+	UTILS_LP_FAST(angle_mv_filter, angle_mv, 0.02);
+#endif
 }
 
 //static void adcerrorcallback(ADCDriver *adcp, adcerror_t err) {
@@ -64,10 +82,19 @@ static const ADCConversionGroup adcgrpcfg = {
 		ADC_SMPR1_SMP_AN13(ADC_SAMPLE_56) |
 		ADC_SMPR1_SMP_SENSOR(ADC_SAMPLE_144) |
 		ADC_SMPR1_SMP_VREF(ADC_SAMPLE_144),
+#ifdef ANGLE_SENSOR_PA3
+		ADC_SMPR2_SMP_AN4(ADC_SAMPLE_56) |
+		ADC_SMPR2_SMP_AN3(ADC_SAMPLE_144), /* SMPR2 */
+#else
 		ADC_SMPR2_SMP_AN4(ADC_SAMPLE_56), /* SMPR2 */
+#endif
 		ADC_SQR1_NUM_CH(ADC_GRP_NUM_CHANNELS),
 		ADC_SQR2_SQ8_N(ADC_CHANNEL_SENSOR) | ADC_SQR2_SQ7_N(ADC_CHANNEL_VREFINT),
+#ifdef ANGLE_SENSOR_PA3
+		ADC_SQR3_SQ6_N(ADC_CHANNEL_IN3)   | ADC_SQR3_SQ5_N(ADC_CHANNEL_IN10) |
+#else
 		ADC_SQR3_SQ6_N(ADC_CHANNEL_IN11)  | ADC_SQR3_SQ5_N(ADC_CHANNEL_IN10) |
+#endif
 		ADC_SQR3_SQ4_N(ADC_CHANNEL_IN13) | ADC_SQR3_SQ3_N(ADC_CHANNEL_IN12) |
 		ADC_SQR3_SQ2_N(ADC_CHANNEL_IN11) | ADC_SQR3_SQ1_N(ADC_CHANNEL_IN10)
 };
@@ -77,6 +104,9 @@ void adconv_init(void) {
 	palSetPadMode(GPIOC, 1, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 2, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 3, PAL_MODE_INPUT_ANALOG);
+#ifdef ANGLE_SENSOR_PA3
+	palSetPadMode(GPIOA, 3, PAL_MODE_INPUT_ANALOG);
+#endif
 
 	adcStart(&ADCD1, NULL);
 	adcSTM32EnableTSVREFE();
@@ -88,6 +118,14 @@ void adconv_init(void) {
 			"Read the input voltage.",
 			0,
 			terminal_cmd_get_vin);
+
+#ifdef ANGLE_SENSOR_PA3
+	terminal_register_command_callback(
+			"vinkel",
+			"Vinkelgivaren: spänning (mV), vinkel och status.",
+			0,
+			terminal_cmd_angle);
+#endif
 }
 
 /**
@@ -130,3 +168,36 @@ static void terminal_cmd_get_vin(int argc, const char **argv) {
 	(void)argv;
 	commands_printf("Input Voltage: %.2f V\n", (double)adconv_get_vin());
 }
+
+#ifdef ANGLE_SENSOR_PA3
+/**
+ * Räkna om vinkelgivarens spänning till vinkel. Anropas var 10:e ms från main.
+ * Vid givarfel (spänning nära 0 V: magneten saknas eller kabeln av) behålls
+ * senaste vinkeln och statusen blir "fel".
+ */
+void adconv_update_angle(void) {
+	float mv = angle_mv_filter;
+	last_sensorvalue = (uint16_t)(mv < 0.0 ? 0.0 : mv);	// mV, skickas med i statusen
+
+	if (mv < ANGLE_SENSOR_MIN_MV) {
+		angle_sensor_ok = false;
+		return;
+	}
+
+	angle_sensor_ok = true;
+	frontangle = (mv - ANGLE_SENSOR_CENTER_MV) * ANGLE_SENSOR_DEG_PER_MV;
+	comm_can_io_board_as5047_setangle(frontangle);
+}
+
+bool adconv_angle_sensor_ok(void) {
+	return angle_sensor_ok;
+}
+
+static void terminal_cmd_angle(int argc, const char **argv) {
+	(void)argc;
+	(void)argv;
+	commands_printf("Vinkelgivare: %.0f mV, vinkel %.1f grader, %s\n",
+			(double)angle_mv_filter, (double)frontangle,
+			angle_sensor_ok ? "OK" : "FEL (ingen magnet/kabel?)");
+}
+#endif

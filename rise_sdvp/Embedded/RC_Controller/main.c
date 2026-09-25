@@ -144,5 +144,8 @@ int main(void) {
 	for(;;) {
 		chThdSleepMilliseconds(10);
 		packet_timerfunc();
+#ifdef ANGLE_SENSOR_PA3
+		adconv_update_angle();
+#endif
 	}
 }

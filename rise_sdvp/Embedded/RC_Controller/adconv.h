@@ -27,5 +27,7 @@ void adconv_init(void);
 uint16_t adconv_get_pin(int pin);
 float adconv_get_volts(int pin);
 float adconv_get_vin(void);
+void adconv_update_angle(void);
+bool adconv_angle_sensor_ok(void);
 
 #endif /* ADCONV_H_ */

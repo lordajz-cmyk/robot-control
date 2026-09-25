@@ -147,10 +147,12 @@ void pwm_esc_init(void) {
 			PAL_MODE_ALTERNATE(GPIO_AF_TIM9) |
 			PAL_STM32_OTYPE_PUSHPULL |
 			PAL_STM32_OSPEED_MID1);
+#ifndef ANGLE_SENSOR_PA3	// PA3 är då analog ingång för vinkelgivaren (adconv.c)
 	palSetPadMode(SERVO4_GPIO, SERVO4_PIN,
 			PAL_MODE_ALTERNATE(GPIO_AF_TIM9) |
 			PAL_STM32_OTYPE_PUSHPULL |
 			PAL_STM32_OSPEED_MID1);
+#endif
 
 	pwm_esc_set_all(0);
 #endif
@@ -237,7 +239,11 @@ void tach_input_init(void) {
     rccEnableTIM2(TRUE);
 
     // Configure PA2 as TIM2_CH3 (AF1)
+#ifdef WHEELSPEED_PULLUP
+    palSetPadMode(TACHO_INPUT_PORT, 2, PAL_MODE_ALTERNATE(1) | PAL_STM32_PUDR_PULLUP);
+#else
     palSetPadMode(TACHO_INPUT_PORT, 2, PAL_MODE_ALTERNATE(1));
+#endif
 
     // Timer configuration
     TIM2->PSC = 840 - 1;        // 84 MHz / 84 = 1 MHz → 1 µs per count

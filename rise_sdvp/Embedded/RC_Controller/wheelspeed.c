@@ -45,7 +45,11 @@ extern float debugvalue5;
 	const float wheel_diam = 0.65;
 	const float cnts_per_rev = 16.0;
 #endif
-#ifdef IS_DRANGEN
+#if defined(WHEELSPEED_DIAM)
+	// Measure speed (mått i conf_general.h, t.ex. RobAnt)
+	const float wheel_diam = WHEELSPEED_DIAM;
+	const float cnts_per_rev = WHEELSPEED_CNTS_PER_REV;
+#elif defined(IS_DRANGEN)
 	// Measure speed
 	const float wheel_diam = 0.30;
 	const float cnts_per_rev = 16.0;
