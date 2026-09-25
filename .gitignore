@@ -21,3 +21,15 @@ rise_sdvp/Linux/Car_Client/Car_Client
 rise_sdvp/Linux/Car_Client/qrc_*.cpp
 rise_sdvp/Linux/Car_Client/.qmake.stash
 rise_sdvp/Embedded/RC_Controller/.dep/
+
+# Interna anteckningar och underlag — finns lokalt, ska inte ligga på GitHub
+SESSION_STATUS.md
+PROJECT_SPEC.md
+mock_test.md
+pi_install_test.md
+framtida_inkop.md
+test-reports/
+besok_*.md
+installationsguide_sleipner.md
+*.pdf
+Skärmbild*.png

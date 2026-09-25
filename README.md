@@ -1,111 +1,111 @@
-# Robot Control — återskapat projekt
+# Robotstyrning
 
-Se **PROJECT_SPEC.md** för hela bakgrunden, alla beslut och vad som är kvar att
-bekräfta mot hårdvaran. Den filen är det viktigaste dokumentet i det här repot
-— läs särskilt **§14** för arkitekturen (WireGuard-baserad, se nedan) innan du
-läser äldre avsnitt som pratar om en reläserver (skrotad, se §14).
+Fjärrstyr en robot med en PS4-handkontroll och se kamerabilden live, från en vanlig
+Ubuntu-dator, var du än är. Datorn och roboten pratar över ett eget krypterat nätverk
+(WireGuard), och roboten stannar av sig själv om kontakten försvinner.
 
-## Struktur
+```
+ Din dator                          Roboten (Raspberry Pi)
+┌───────────────┐   WireGuard   ┌──────────┐  TCP  ┌────────────┐  USB  ┌───────────┐  CAN  ┌──────────┐
+│ Robotstyrning │──────────────▶│  robotd  │──────▶│ Car_Client │──────▶│ styrkortet│──────▶│ motorer  │
+│  + PS4-dosa   │ 192.168.200.x │ :9000    │       └────────────┘       └───────────┘       │ (VESC)   │
+└───────────────┘               └──────────┘                                               └──────────┘
+```
 
-- `relay-protocol/` — delade meddelandetyper (styrkommandon, status,
-  VESC-mappning). Inga beroenden på nätverk/kryptografi längre sedan
-  arkitekturomläggningen till WireGuard (PROJECT_SPEC.md §14).
-- `robotd/` — huvudtjänsten som körs på Raspberry Pi:n:
-  - lyssnar direkt på robotens WireGuard-IP (`server.rs`) — klienten
-    ansluter rakt in, inget relä
-  - ansluter till det redan körande `Car_Client` (se PROJECT_SPEC.md §13)
-  - watchdog, mjuka ramper, GPIO-belysning (`gpio_lighting.rs`),
-    OLED-status i den stängda lådan (`display.rs` — internet, om
-    Car_Client-länken kör, USB-kontakt, batteri/senaste fel; bara synlig
-    när man öppnar locket, inte en stor synlig skärm)
-- `robotctl/` — litet CLI-verktyg på Pi:n. Sedan WireGuard-omläggningen är
-  parkoppling = att bli WireGuard-peer (era egna `wireguard.sh`-skript),
-  inte något `robotctl` behöver göra — se filens docstring.
-- `mock-robotd/` — en låtsas-robot (samma protokoll, påhittad telemetri)
-  för att testa hela kedjan utan hårdvara. Är, precis som riktiga
-  `robotd`, en server man ansluter till.
-- `client/` (paketnamn `robotstyrning`) — Ubuntu-appen. Svart
-  anslutningsskärm (robotens VPN-IP eller namn) → helskärm med kamera →
-  AKTIVERA-knapp → färgad ram.
-- `relay-server/` — **arkiv, byggs inte längre.** Den gamla, mer
-  komplicerade reläserver-lösningen (Ed25519-parkoppling m.m.) som byttes
-  ut mot WireGuard. Ligger kvar bara som referens.
+## Vad appen gör
 
-## Installation
+- **Kamerabild i helskärm** från roboten (H.264 över nätverket).
+- **Kör med handkontrollen:** vänster spak upp/ner = fram/bak, höger spak åt sidan = sväng.
+- **AKTIVERA-knapp:** roboten kan inte köras förrän du aktiverar den, och bara när alla
+  motorer svarar (och kameran fungerar i CAM-läge). Texten under knappen säger vad som saknas.
+- **Färgad ram runt bilden** visar läget: grön = bra kontakt, gul = dålig kontakt,
+  röd = ingen kontakt (roboten stannar), lila = handkontrollen saknas.
+- **Status:** fart, batteri (V och %), hur många motorer som svarar, temperatur, ping.
+- **Max-reglage** för hur fort roboten får köra. Värdet sparas till nästa gång.
+- **🔒 Lås** (eller Esc) slår av körningen direkt.
+- **CAM/LOS:** kör på kamerabilden, eller med roboten i sikte om kameran inte fungerar.
+- **⚙ Inställningar:** styrkortets motorinställningar (vilken motor som är fart och styrning)
+  läses och skrivs härifrån.
 
-Se **[installationsguide.md](installationsguide.md)**. Repot är fristående:
-Car_Client, styrkortets firmware och WireGuard-skripten ligger med
-(`rise_sdvp/`, `wireguard/`), så rise_sdvp behöver inte klonas.
+### Säkerhet
+- Släpper du spakarna stannar roboten.
+- Försvinner nätverket stannar roboten **av sig själv** inom en halv sekund (watchdog på roboten).
+- Tappar handkontrollen kontakten, eller rör du den inte på 5 minuter, låses körningen.
+- Farten ändras mjukt (ramper), aldrig ryckigt.
 
-- `scripts/ny_robot.sh` (datorn): gör en ny robots Pi klar (WireGuard,
-  grundsystem med Car_Client/RTK, robotd som tjänst).
-- `scripts/skicka_robotd.sh` (datorn): uppdatera robotd på en robot.
-- `scripts/install_client.sh` (datorn): bygg och installera robotstyrning.
-- `flash_styrkort.sh` (Pi:n): bygg och flasha styrkortets firmware.
-- `scripts/install_pi.sh`, `scripts/uppdatera_robotd.sh`,
-  `rise_sdvp/install_car_client.sh`: körs på Pi:n av skripten ovan.
+## Installera
 
-## Testköra hela systemet utan hårdvara
-
-Eftersom ingen robot finns färdigbyggd än går det att testa hela
-programvarukedjan — anslutningsskärm, AKTIVERA-flödet, färgad ram,
-Settings-vyns VESC-skanning — på en vanlig Ubuntu-dator, ingen Pi eller
-CAN-buss behövs, och sedan WireGuard-omläggningen räcker det med **två**
-terminaler istället för tre:
+**Roboten är färdig och du ska bara köra den?**
+Följ **[installationsguide_kund.md](installationsguide_kund.md)**, steg för steg med skärmtexter.
+Kort version för en Ubuntu-dator (22.04 eller nyare):
 
 ```bash
-# Terminal 1: låtsas-roboten (hittar på telemetri, pratar riktigt protokoll)
+sudo apt install -y git
+git clone https://github.com/lordajz-cmyk/robot-control.git ~/robot-control
+cd ~/robot-control
+sudo bash wireguard/wireguard.sh        # datorn med i robotens nätverk (skicka nyckeln till oss)
+bash scripts/install_client.sh          # bygger och installerar Robotstyrning (10–20 min)
+```
+
+Starta sedan med `Robotstyrning` i en terminal eller från programmenyn, och skriv
+robotens adress (t.ex. `192.168.200.12`).
+
+**Uppdatera:**
+```bash
+cd ~/robot-control && git pull && bash scripts/install_client.sh
+```
+
+**Bygger du en ny robot** (Raspberry Pi, styrkort, WireGuard-server)?
+Följ **[installationsguide.md](installationsguide.md)**. Kort sagt:
+
+| Skript | Körs på | Gör |
+|---|---|---|
+| `scripts/ny_robot.sh` | datorn | Gör en ny robots Pi klar: WireGuard, Car_Client, RTK, robotd som tjänst |
+| `scripts/skicka_robotd.sh` | datorn | Uppdaterar robotd på en robot (`PI=användare@ip`) |
+| `flash_styrkort.sh` | Pi:n | Bygger och flashar styrkortets firmware (behåller inställningarna) |
+| `wireguard/wireguard_admin.sh` | VPN-servern | Sätter upp servern och lägger till nya datorer/robotar |
+
+## RControlStation
+
+Robotarna fungerar också med **RControlStation** (karta, GPS/RTK, rutter), från
+[rise_sdvp](https://github.com/lordajz-cmyk/rise_sdvp). Installeras med
+`sudo bash install_dator.sh` i det repot, se steg 8 i kundguiden.
+Robotstyrning och RControlStation kan inte vara anslutna till samma robot samtidigt.
+
+## Innehåll
+
+| Mapp | Vad |
+|---|---|
+| `client/` | **Robotstyrning**, appen på din dator (Rust, paketnamn `robotstyrning`) |
+| `robotd/` | Tjänsten på robotens Pi: tar emot styrningen, watchdog, ramper, video, status |
+| `relay-protocol/` | Meddelandena mellan appen och robotd (delas av båda) |
+| `mock-robotd/` | En låtsasrobot för att testa appen utan hårdvara |
+| `robotctl/` | Litet verktyg på Pi:n |
+| `rise_sdvp/` | Car_Client och styrkortets firmware (från rise_sdvp), så att repot klarar sig självt |
+| `wireguard/` | Skript och guider för VPN:et |
+| `scripts/` | Installation och uppdatering |
+| `firmware/` | Patchar till styrkortets firmware |
+| `relay-server/` | Arkiv: den gamla relälösningen före WireGuard, byggs inte |
+
+## Testa utan robot
+
+```bash
+# Terminal 1: låtsasroboten
 cargo run -p mock-robotd -- --bind 0.0.0.0:9000
 
-# Terminal 2: klienten
+# Terminal 2: appen, anslut till 127.0.0.1
 cargo run -p robotstyrning
-# skriv "127.0.0.1" på anslutningsskärmen
 ```
 
-Vill man testa över den riktiga WireGuard-tunneln istället: kör
-`mock-robotd` (eller riktiga `robotd`) på en maskin som är uppe på VPN:et,
-och skriv dess `192.168.200.x`-adress på anslutningsskärmen istället för
-`127.0.0.1`.
+Det testar anslutning, AKTIVERA-flödet, ramen och statusen, men inte att motorerna faktiskt rör sig.
 
-Det här testar INTE om styrningen faktiskt fungerar mot er hydraulik/VESC —
-bara att nätverket och gränssnittet i övrigt hänger ihop som tänkt. Bra sätt
-att hitta buggar (som gamepad-buggen 2026-09-16, se PROJECT_SPEC.md) utan
-att behöva ha hårdvaran uppkopplad.
-
-## Bygga
+## Bygga själv
 
 ```bash
-cargo build --workspace
+cargo build --release -p robotstyrning     # appen (kräver systempaketen i install_client.sh)
+cargo build --release -p robotd            # på Pi:n
 ```
 
-`robotd` kräver `libsocketcan`/CAN-headers samt GPIO/I2C-bibliotek — bygg den
-delen direkt på Raspberry Pi:n (eller korskompilera). `client` kräver
-GStreamer-utvecklingspaket för videot när `video.rs` kopplas ihop på riktigt.
-(`relay-server` är inte med i workspacet längre, se §14 i PROJECT_SPEC.md.)
+## Licens
 
-## Vad som är verkligt kod vs. skelett
-
-- **Klar logik, testad:** `robotd/src/watchdog.rs`, `robotd/src/ramp.rs`,
-  `robotd/src/vesc_can.rs` (parsing/frame-bygge), `robotd/src/serial_bridge.rs`
-  (paket-inramning + CRC16, verifierad byte-exakt mot riktig trafik, se
-  PROJECT_SPEC.md §13).
-- **Ihopkopplat end-to-end, väntar på verifierade CAN-kommando-ID:n:**
-  `robotd/src/server.rs` ↔ `client/src/net.rs` (direktanslutning över
-  WireGuard, se §14) — själva nätverket/UI:t fungerar, men `robotd` svarar
-  ännu med tom VESC-lista och skickar ingen riktig StatusUpdate, eftersom
-  Car_Client-protokollets kommando-ID:n inte är bekräftade än (§13).
-- **Väntar på hårdvara/nät för att kopplas ihop:** CAN-detektion
-  (`can_iface.rs` — väg B, se §11/§13), WebRTC-video (`client/src/video.rs`
-  — mest oprövade delen).
-- **Strukturellt klart, väntar på hårdvara för att verifieras:**
-  `robotd/src/gpio_lighting.rs` (GPIO17 → relä, aktiv-hög/låg okänt än),
-  `robotd/src/display.rs` (SSD1306 OLED, 128x64 antaget, I2C-adress ej
-  bekräftad).
-
-## Nästa steg
-
-Kör kommandona i PROJECT_SPEC.md §11 på Pi:n (kopplad till CarController-
-kortet, inga VESC:ar/hydraulik behöver vara inkopplade) för att bekräfta
-Car_Client-protokollets kommando-ID:n — det är den sista stora
-osäkerheten. Klistra in resultatet i chatten, eller peka en Claude
-Code-session hit med den här filen + PROJECT_SPEC.md.
+`rise_sdvp/` (Car_Client och firmware) är GPL-3.0, se [rise_sdvp/LICENSE](rise_sdvp/LICENSE).
