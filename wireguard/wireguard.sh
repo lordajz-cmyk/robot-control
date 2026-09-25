@@ -33,11 +33,11 @@ echo -e "samt skapar en färdig konfigurationsfil för tunneln direkt!\n"
 echo -e "${YELLOW}${BOLD}Installerar WireGuard och nätverksverktyg...${NC}"
 apt update
 
-# resolvconf krävs ofta för dns-hantering i wireguard på debian/ubuntu
+# Inte resolvconf: vår wg0.conf har ingen DNS-rad, och på Raspberry Pi OS Trixie
+# tar resolvconf över /etc/resolv.conf och tömmer den (ingen DNS alls).
 PACKAGES=(
     wireguard
     wireguard-tools
-    resolvconf
 )
 
 FAILED_PKGS=()

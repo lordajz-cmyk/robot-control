@@ -55,7 +55,6 @@ PACKAGES=(
     usbutils
     wireguard
     wireguard-tools
-    resolvconf
 )
 
 # Intelligent detektering av Qt-version (Prioriterar Qt6 enligt Benjamins instruktioner)
