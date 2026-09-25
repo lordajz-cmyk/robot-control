@@ -77,6 +77,15 @@ static THD_WORKING_AREA(hydro_thread_wa, 1024);
 static THD_FUNCTION(hydro_thread, arg);
 
 void hydraulic_init(void) {
+	// main.c anropar hydraulic_init() både för HAS_HYDRAULIC_DRIVE och WHEEL_SENSOR.
+	// MacTrac har båda, och en andra chThdCreateStatic() på samma working area
+	// förstörde trådlistan: kortet hängde i chSchReadyI() innan USB startat.
+	static bool initialized = false;
+	if (initialized) {
+		return;
+	}
+	initialized = true;
+
 #ifdef IS_MACTRAC
 	main_config.mr.motor_pwm_min_us = 1000;
 	main_config.mr.motor_pwm_max_us = 2000;
