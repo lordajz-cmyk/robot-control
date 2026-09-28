@@ -29,15 +29,16 @@ static PID_Controller pid_controllers[4];
 static int active_control_count = 0;
 
 void state_control_init(void) {
-    MAIN_CONFIG conf;
-    conf_general_read_main_conf(&conf);
-    
+    // main_config är redan inläst och rimlighetskontrollerad; en egen kopia från
+    // EEPROM här tog 600 byte stack och hundratals EEPROM-läsningar.
+    const MAIN_CONFIG *conf = &main_config;
+
     active_control_count = 0;
-    
+
     // Load state control configurations from main_config
     for (int i = 0; i < 4; i++) {
-        if (i < conf.vehicle.state_controls) {
-            active_controls[i] = conf.vehicle.control[i];
+        if (i < conf->vehicle.state_controls) {
+            active_controls[i] = conf->vehicle.control[i];
             
             // Initialize PID controller for this control loop
             pid_init(&pid_controllers[i], 
@@ -79,8 +80,13 @@ void state_control_update_single(STATE_CONTROL* control) {
     // 2. Calculate error
     float error = control->target_value - current_value;
     
-    // 3. Get the PID controller for this control loop
-    PID_Controller* pid = &pid_controllers[control->control_type]; // Simple mapping for now
+    // 3. Get the PID controller for this control loop. En PID per loop (förut
+    // indexerades med control_type, 0..4, vilket gick utanför arrayen på 4).
+    int idx = (int)(control - active_controls);
+    if (idx < 0 || idx >= 4) {
+        return;
+    }
+    PID_Controller* pid = &pid_controllers[idx];
     
     // 4. Apply PID control
     float output = pid_update(pid, error, control->control_type);

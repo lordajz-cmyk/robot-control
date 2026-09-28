@@ -432,7 +432,7 @@ ACTUATOR* motor_get_actuators_by_activity(uint16_t activity, int* count) {
     *count = 0;
 
     // Loop through all actuators in the configuration
-    for (int i = 0; i < main_config.vehicle.actuators; i++) {
+    for (int i = 0; i < main_config.vehicle.actuators && i < 4; i++) {
         if (main_config.vehicle.actuator[i].activity == activity) {
             (*count)++;
         }
@@ -452,7 +452,7 @@ ACTUATOR* motor_get_actuators_by_activity(uint16_t activity, int* count) {
 
     // Copy matching actuators to the result array
     int result_index = 0;
-    for (int i = 0; i < main_config.vehicle.actuators; i++) {
+    for (int i = 0; i < main_config.vehicle.actuators && i < 4; i++) {
         if (main_config.vehicle.actuator[i].activity == activity) {
             result[result_index] = main_config.vehicle.actuator[i];
             result_index++;

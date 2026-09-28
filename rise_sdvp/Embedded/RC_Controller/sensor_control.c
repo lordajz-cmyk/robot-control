@@ -43,15 +43,16 @@ void sensor_control_init(void) {
 }
 
 SENSOR* sensor_get_sensors_by_activity(uint16_t activity, int* count) {
-    MAIN_CONFIG conf;
-    conf_general_read_main_conf(&conf);
+    // main_config i RAM = EEPROM; en egen kopia tog 600 byte stack och
+    // hundratals EEPROM-sökningar per anrop (för motorer: vid varje spakkommando).
+    const MAIN_CONFIG *conf = &main_config;
     
     // Initialize count to 0
     *count = 0;
     
     // Loop through all sensors in the configuration
-    for (int i = 0; i < conf.vehicle.sensors; i++) {
-        if (conf.vehicle.sensor[i].activity == activity) {
+    for (int i = 0; i < conf->vehicle.sensors && i < 4; i++) {
+        if (conf->vehicle.sensor[i].activity == activity) {
             (*count)++;
         }
     }
@@ -70,9 +71,9 @@ SENSOR* sensor_get_sensors_by_activity(uint16_t activity, int* count) {
     
     // Copy matching sensors to the result array
     int result_index = 0;
-    for (int i = 0; i < conf.vehicle.sensors; i++) {
-        if (conf.vehicle.sensor[i].activity == activity) {
-            result[result_index] = conf.vehicle.sensor[i];
+    for (int i = 0; i < conf->vehicle.sensors && i < 4; i++) {
+        if (conf->vehicle.sensor[i].activity == activity) {
+            result[result_index] = conf->vehicle.sensor[i];
             result_index++;
         }
     }
@@ -99,16 +100,17 @@ float sensor_read_value(uint16_t sensorid, SENSOR_TYPE type) {
 }
 
 float sensor_get_activity_value(uint16_t activity) {
-    MAIN_CONFIG conf;
-    conf_general_read_main_conf(&conf);
+    // main_config i RAM = EEPROM; en egen kopia tog 600 byte stack och
+    // hundratals EEPROM-sökningar per anrop (för motorer: vid varje spakkommando).
+    const MAIN_CONFIG *conf = &main_config;
     
     float total_value = 0.0f;
     int sensor_count = 0;
     
     // Find all sensors with this activity and average their values
-    for (int i = 0; i < conf.vehicle.sensors; i++) {
-        if (conf.vehicle.sensor[i].activity == activity) {
-            float value = sensor_read_value(conf.vehicle.sensor[i].sensorid, conf.vehicle.sensor[i].type);
+    for (int i = 0; i < conf->vehicle.sensors && i < 4; i++) {
+        if (conf->vehicle.sensor[i].activity == activity) {
+            float value = sensor_read_value(conf->vehicle.sensor[i].sensorid, conf->vehicle.sensor[i].type);
             total_value += value;
             sensor_count++;
         }

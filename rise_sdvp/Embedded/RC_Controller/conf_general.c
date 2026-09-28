@@ -325,6 +325,37 @@ void conf_general_read_main_conf(MAIN_CONFIG *conf) {
 	if (!is_ok) {
 		conf_general_get_default_main_config(conf);
 	}
+
+	conf_general_sanitize_main_config(conf);
+}
+
+/**
+ * Rimlighetskontroll av antalen aktuatorer/sensorer/reglerloopar (max 4 st var).
+ * Skräp här (t.ex. från en Write där kortet läste förbi paketets slut) fick
+ * reglerlooparna att indexera utanför minnet och kortet att hänga.
+ */
+void conf_general_sanitize_main_config(MAIN_CONFIG *conf) {
+	if (conf->vehicle.actuators > 4) {
+		conf->vehicle.actuators = 0;
+	}
+
+	if (conf->vehicle.sensors > 4) {
+		conf->vehicle.sensors = 0;
+		memset(conf->vehicle.sensor, 0, sizeof(conf->vehicle.sensor));
+	}
+
+	if (conf->vehicle.state_controls > 4) {
+		conf->vehicle.state_controls = 0;
+		memset(conf->vehicle.control, 0, sizeof(conf->vehicle.control));
+	}
+
+	for (int i = 0;i < 4;i++) {
+		// bool i minnet kan innehålla vad som helst efter en trasig Write
+		uint8_t *en = (uint8_t*)&conf->vehicle.control[i].enabled;
+		if (*en > 1 || conf->vehicle.control[i].control_type > CT_TEMPERATURE) {
+			*en = 0;
+		}
+	}
 }
 
 /**
