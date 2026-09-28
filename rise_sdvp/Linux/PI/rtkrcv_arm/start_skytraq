@@ -1,0 +1,7 @@
+#!/bin/bash
+# Egen ./rtkrcv om den finns (byggd för hand, t.ex. på RobAnt). Den är utesluten i
+# git, så på en ny installation används rtkrcv från Debians rtklib-paket i stället
+# (/usr/bin/rtkrcv, installeras av install_pi.sh). Utan detta startade rtklib-sessionen
+# aldrig på nya Pi:ar (MacBot SLU 2026-09-28) och ingen position kom på port 2948.
+if [ -x ./rtkrcv ]; then RTKRCV=./rtkrcv; else RTKRCV=rtkrcv; fi
+$RTKRCV -o rover_skytraq.conf -s

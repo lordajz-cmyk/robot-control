@@ -553,12 +553,23 @@ void CarClient::restartRtklib()
 
     QProcess process3;
     process3.setEnvironment(QProcess::systemEnvironment());
-    // Detect whether project is cloned inside RControllStation and fallback to standard path
-    QString rtkPath = QString("/home/%1/RControllStation/rise_sdvp/Linux/PI/rtkrcv_arm").arg(user);
-    QDir rtkDir(rtkPath);
-    if (!rtkDir.exists()) {
-        rtkPath = QString("/home/%1/rise_sdvp/Linux/RTK/rtkrcv_arm").arg(user);
+    // rtkrcv-mappen ligger bredvid Car_Client i samma repo (Linux/Car_Client ->
+    // Linux/PI/rtkrcv_arm), var repot än är klonat. De hårdkodade sökvägarna nedan
+    // fanns inte på nya installationer (t.ex. ~/rise_sdvp med Linux/PI, inte Linux/RTK),
+    // så rtklib startade aldrig och ingen position kom på port 2948.
+    QStringList rtkCandidates;
+    rtkCandidates << QDir(QCoreApplication::applicationDirPath() + "/../PI/rtkrcv_arm").absolutePath()
+                  << QString("/home/%1/RControllStation/rise_sdvp/Linux/PI/rtkrcv_arm").arg(user)
+                  << QString("/home/%1/rise_sdvp/Linux/PI/rtkrcv_arm").arg(user)
+                  << QString("/home/%1/rise_sdvp/Linux/RTK/rtkrcv_arm").arg(user);
+    QString rtkPath = rtkCandidates.first();
+    for (const QString &c : rtkCandidates) {
+        if (QFile::exists(c + "/start_ublox")) {
+            rtkPath = c;
+            break;
+        }
     }
+    qDebug() << "Starting rtklib in" << rtkPath;
     process3.start("screen", QStringList() <<
                    "-d" << "-m" << "-S" << "rtklib" << "bash" << "-c" <<
                    QString("cd %1 && ./start_ublox ; bash").arg(rtkPath));
