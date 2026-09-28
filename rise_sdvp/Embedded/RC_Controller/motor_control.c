@@ -393,7 +393,24 @@ void motor_set_speed_autopilot(float speed) {
     #endif
 }
 
+/**
+ * Stoppa direkt: gas i neutralt och (MacTrac) alla armar stilla. Förut låg gasen
+ * kvar tills hydraulikens timeout (2 s) och armarna tills TIMEOUT_SECONDS_MOVE
+ * (10 s) när autopiloten stängdes av eller rutten tog slut.
+ * Maskiner med VESC:er stoppas av VESC:ernas egen timeout.
+ */
+void motor_stop(void) {
+    #if HAS_HYDRAULIC_DRIVE
+        hydraulic_set_speed(0.0);
+        hydraulic_move(HYDRAULIC_POS_FRONT, HYDRAULIC_MOVE_STOP);
+        hydraulic_move(HYDRAULIC_POS_REAR, HYDRAULIC_MOVE_STOP);
+        hydraulic_move(HYDRAULIC_POS_EXTRA, HYDRAULIC_MOVE_STOP);
+    #endif
+}
+
 void motor_handle_route_end(void) {
+    motor_stop();
+
     // Center steering
     #if HAS_HYDRAULIC_DRIVE
         servo_simple_set_pos_ramp(main_config.vehicle.steering_center, false);

@@ -23,6 +23,7 @@
 #include "chsystypes.h"
 
 // Functions
+systime_t timeout_heartbeat_ms(float seconds);
 void timeout_init(void);
 void timeout_configure(systime_t timeout, float brake_current);
 void timeout_reset(void);

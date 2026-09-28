@@ -32,9 +32,21 @@ static volatile bool m_has_timeout;
 static THD_WORKING_AREA(timeout_thread_wa, 512);
 static THD_FUNCTION(timeout_thread, arg);
 
+/**
+ * Heartbeat i inställningarna (heartbeat_maxtime) är i sekunder, som i
+ * RControlStation ("s"). Förut användes talet direkt som millisekunder, så
+ * standardvärdet 3 gav 3 ms och stängde av autopiloten hela tiden. 0 = av.
+ */
+systime_t timeout_heartbeat_ms(float seconds) {
+	if (!(seconds > 0.0)) {
+		return 0;
+	}
+	return (systime_t)(seconds * 1000.0);
+}
+
 void timeout_init(void) {
 //	m_timeout_msec = 2000;
-	m_timeout_msec = main_config.vehicle.heartbeat_maxtime;
+	m_timeout_msec = timeout_heartbeat_ms(main_config.vehicle.heartbeat_maxtime);
 	m_last_update_time = 0;
 	m_timeout_brake_current = 0.0;
 	m_has_timeout = false;

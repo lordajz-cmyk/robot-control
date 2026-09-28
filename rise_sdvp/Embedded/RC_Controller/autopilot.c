@@ -425,6 +425,12 @@ void autopilot_set_active(bool active) {
 //		m_sync_rx = false; // Commented out: reset sync flag on activation
 	}
 
+	// Stängs autopiloten av mitt i en rutt: stoppa gas och armar direkt (bara vid
+	// övergången, timeout-tråden anropar detta var 10:e ms så länge förbindelsen saknas).
+	if (!active && m_is_active) {
+		motor_stop();
+	}
+
 	// Set active state
 	m_is_active = active;
 

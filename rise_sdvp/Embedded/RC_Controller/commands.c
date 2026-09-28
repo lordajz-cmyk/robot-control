@@ -666,6 +666,12 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			timeout_reset();
 			commands_set_send_func(func);
 
+			// Stoppa maskinen innan inställningarna ändras och sparas: sparningen i
+			// flash står still en stund, och körning med halvt ändrade värden vill
+			// ingen ha. (Gunnars förslag 2026-09-28.)
+			autopilot_set_active(false);
+			motor_stop();
+
 			int32_t ind = 0;
 			main_config.mag_use = data[ind++];
 			main_config.mag_comp = data[ind++];
@@ -806,6 +812,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			// läste då de gamla, ev. trasiga, värdena från EEPROM).
 			sensor_control_init();
 			state_control_init();
+
+			// Nytt heartbeat gäller direkt (förut först efter omstart av kortet).
+			timeout_configure(timeout_heartbeat_ms(main_config.vehicle.heartbeat_maxtime),
+					timeout_get_brake_current());
 
 			// Send ack
 			int32_t send_index = 0;

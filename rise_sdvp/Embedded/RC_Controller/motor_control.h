@@ -42,6 +42,7 @@ void motor_steering_control(float throttle, float steering,float  frontangle);
 void motor_set_steering_autopilot(float steering_angle, float circle_radius);
 void motor_set_speed_autopilot(float speed);
 void motor_handle_route_end(void);
+void motor_stop(void);
 void motor_set_vesc_value(int id, float value,motor_control_mode mode);
 
 // Function to get actuators by activity
