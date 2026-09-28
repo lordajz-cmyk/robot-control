@@ -213,7 +213,9 @@ CAR_CLIENT_RUNNING=0
 if pgrep -x Car_Client > /dev/null 2>&1; then
   CAR_CLIENT_RUNNING=1
   echo -e "${RED}${BOLD}⚠️  Car_Client körs på den här datorn.${NC} Flashningen startar om styrkortet"
-  echo -e "   och avbryter allt som styr roboten just nu. Försäkra dig om att roboten står stilla."
+  echo -e "   och avbryter allt som styr roboten just nu. Försäkra dig om att roboten står stilla,"
+  echo -e "   och på en hydraulisk maskin (MacTrac) att motorn är avstängd."
+  echo -e "   Koppla från RControlStation/robotstyrning först, så kan skriptet läsa av kortet efteråt."
 fi
 
 echo -e "${BLUE}${BOLD}Instruktioner för hårdvarukoppling:${NC}"
@@ -271,17 +273,42 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# 🔬 STEG 3: Interaktivt skrivbordstest (Live-diagnostik)
+# 🔬 STEG 3: Kontroll efter flashningen
 # ------------------------------------------------------------------------------
-if [ "$AUTO_JA" = "1" ]; then
+# På en robot/maskin (Car_Client kör): läs styrkortets inställningar via Car_Client,
+# samma som Read i RControlStation. Bara läsning. Svarar kortet kör den nya firmwaren.
+if [ "$CAR_CLIENT_RUNNING" -eq 1 ]; then
+  echo -e "\n${YELLOW}${BOLD}[Steg 3/3] Läser av styrkortet via Car_Client...${NC}"
+  LAS=""
+  for c in "$(dirname "$(dirname "$FW_SRC")")/Linux/tools/las_styrkort.py" "$DIR/Linux/tools/las_styrkort.py"; do
+    [ -f "$c" ] && LAS="$c" && break
+  done
+  sleep 8   # kortet startar om och Car_Client öppnar porten igen
+  if [ -n "$LAS" ] && command -v python3 >/dev/null 2>&1; then
+    if (cd /tmp && python3 "$LAS" 127.0.0.1 | grep -q "^STYRKORT"); then
+      echo -e "${GREEN}✅ Styrkortet svarar efter flashningen.${NC}"
+      TW="$(dirname "$LAS")/testa_write.py"
+      if [ -f "$TW" ]; then
+        echo -e "   Testa att Write fungerar (skriver tillbaka kortets egna värden, ändrar inget):"
+        echo -e "   ${BOLD}python3 $TW 3${NC}"
+      fi
+    else
+      echo -e "${YELLOW}⚠️ Kunde inte läsa styrkortet. Är RControlStation ansluten? Koppla från den och kör:${NC}"
+      echo -e "   ${BOLD}python3 $LAS${NC}"
+    fi
+  else
+    echo -e "${YELLOW}Läsverktyget (Linux/tools/las_styrkort.py) saknas här. Kontrollera med Read i RControlStation.${NC}"
+  fi
+  RUN_DIAG="n"
+elif [ "$AUTO_JA" = "1" ]; then
   RUN_DIAG="n"
   echo -e "\n${YELLOW}${BOLD}[Steg 3/3] --ja angiven: hoppar över det interaktiva skrivbordstestet.${NC}"
 else
-  echo -e "\n${YELLOW}${BOLD}[Steg 3/3] Vill du köra ett direkt skrivbordstest via USB nu? (y/n)${NC}"
-  read -p "Köra diagnostiktest? (y/n): " RUN_DIAG
+  echo -e "\n${YELLOW}${BOLD}[Steg 3/3] Kortet på skrivbordet: vill du köra ett test via USB nu? (y/N)${NC}"
+  read -p "Köra diagnostiktest? (y/N): " RUN_DIAG
 fi
 
-if [[ "$RUN_DIAG" =~ ^[Yy]$ ]] || [[ -z "$RUN_DIAG" ]]; then
+if [[ "$RUN_DIAG" =~ ^[Yy]$ ]]; then
   echo -e "\n${BLUE}${BOLD}Instruktioner för skrivbordstest:${NC}"
   echo -e "1. Behåll din ${BOLD}ST-LINK V2${NC} inkopplad (så att kortet får ström)."
   echo -e "2. Anslut ${BOLD}TVÅ Micro-USB-kablar${NC} mellan din dator och de två portarna på Carcontroller-kortet."

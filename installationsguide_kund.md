@@ -223,7 +223,7 @@ står där, skriv **robotens adress** (till exempel `192.168.200.12`) och tryck 
 **Text**.
 
 Handkontrollen är redan inställd och påslagen: vänster spak upp/ner = kör, höger spak åt
-sidan = sväng. **Max** (hur fort den får köra) står på `0.35`.
+sidan = sväng. **Max** (hur fort den får köra) står på `0.42`.
 
 > ⚠️ **Robotstyrning och RControlStation kan inte vara anslutna till roboten samtidigt.**
 > Stäng det ena innan du ansluter med det andra.
