@@ -32,6 +32,8 @@ impl CarClientLink {
         let stream = TcpStream::connect(addr)
             .await
             .map_err(|e| format!("kunde inte ansluta till Car_Client på {addr}: {e}"))?;
+        // Styrkommandon ska iväg direkt, inte samlas ihop av Nagle.
+        let _ = stream.set_nodelay(true);
         tracing::info!("Ansluten till Car_Client på {addr}");
         Ok(Self {
             stream,

@@ -276,6 +276,12 @@ När vi säger att det finns en ny version, klistra in:
 cd ~/robot-control && git pull && bash scripts/install_client.sh
 ```
 
+Har du RControlStation (steg 8) uppdaterar du det så här. Svara **y** på frågan om att
+kompilera, och räkna med 10–20 minuter:
+```
+cd ~/rise_sdvp && git pull && sudo bash install_dator.sh
+```
+
 ---
 
 ## Om något krånglar 🔧

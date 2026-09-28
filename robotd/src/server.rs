@@ -135,7 +135,9 @@ pub fn spawn(bind_addr: String) -> ServerHandles {
                 }
             };
             tracing::info!("robotd lyssnar på {bind_addr}");
-            if let Err(e) = axum::serve(listener, app).await {
+            // tcp_nodelay: status och svar skickas direkt i stället för att vänta på
+            // kvittens (Nagle), vilket över 4G gav fördröjningar på flera hundra ms.
+            if let Err(e) = axum::serve(listener, app).tcp_nodelay(true).await {
                 tracing::error!("servern stannade: {e}");
             }
         });

@@ -31,7 +31,8 @@ fi
 if ! command -v wg &>/dev/null; then
   echo -e "${YELLOW}WireGuard är inte installerat på den här servern än.${NC}"
   echo -e "Installerar wireguard-verktyg..."
-  apt update && apt install -y wireguard wireguard-tools resolvconf
+  # Inte resolvconf: kan ta över /etc/resolv.conf från systemd-resolved (ingen DNS).
+  apt update && apt install -y wireguard wireguard-tools
 fi
 
 # Skapa mappen om den saknas

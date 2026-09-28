@@ -210,7 +210,9 @@ async fn run_connection(
     mut control_rx: mpsc::Receiver<ControlCommand>,
     mut request_rx: mpsc::Receiver<ClientMessage>,
 ) -> Result<(), String> {
-    let (ws_stream, _) = tokio_tungstenite::connect_async(url)
+    // disable_nagle = true: annars håller TCP små styrkommandon tills förra paketet
+    // kvitterats, och över 4G (300-500 ms) kom "släpp" upp till en sekund för sent.
+    let (ws_stream, _) = tokio_tungstenite::connect_async_with_config(url, None, true)
         .await
         .map_err(|e| format!("kunde inte ansluta till {url}: {e}"))?;
     let (mut ws_tx, mut ws_rx) = ws_stream.split();
