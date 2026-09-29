@@ -142,9 +142,12 @@ if ! grep -qE "^[0-9.]+\s+.*\b${NAMN}\b" /etc/hosts; then
   fi
 fi
 
+# Robotens adress till scripts/uppdatera.sh (datorn uppdaterar sedan den här roboten).
+mkdir -p "$HOME/.config/robot-control" && echo "${ANV}@${IP}" > "$HOME/.config/robot-control/pi"
+
 echo
 echo -e "${GREEN}=== Klart: $NAMN ===${NC}"
 echo "Anslut med robotstyrning till: $NAMN  (eller $IP)"
 echo "Logg på roboten:    ssh ${ANV}@${IP} journalctl -u robotd -f"
-echo "Uppdatera senare:   PI=${ANV}@${IP} bash scripts/skicka_robotd.sh"
+echo "Uppdatera allt:     bash scripts/uppdatera.sh   (dator, robot och styrkort)"
 echo "Flasha styrkortet:  på Pi:n: cd robot-control && ./flash_styrkort.sh"

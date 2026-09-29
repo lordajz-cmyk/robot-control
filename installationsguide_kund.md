@@ -271,16 +271,22 @@ sidan = sväng. **Max** (hur fort den får köra) står på `0.42`.
 
 ## Uppdatera programmet 🔄
 
-När vi säger att det finns en ny version, klistra in:
+När vi säger att det finns en ny version:
+
+1. **Stäng Robotstyrning och RControlStation.**
+2. Se till att **roboten är påslagen** och står stilla.
+3. Klistra in:
 ```
-cd ~/robot-control && git pull && bash scripts/install_client.sh
+cd ~/robot-control && git pull && bash scripts/uppdatera.sh
 ```
 
-Har du RControlStation (steg 8) uppdaterar du det så här. Svara **y** på frågan om att
-kompilera, och räkna med 10–20 minuter:
-```
-cd ~/rise_sdvp && git pull && sudo bash install_dator.sh
-```
+Det uppdaterar allt i rätt ordning, utan frågor: Robotstyrning, RControlStation (om du
+har den), programmen på roboten och robotens styrkort. Datorn frågar efter ditt
+lösenord och sedan efter robotens lösenord (samma som vid installationen).
+**Det tar 10–30 minuter.** ☕
+
+✅ **Klart** när det står `Allt är uppdaterat.` Står det något i rött: kör samma kommando
+igen, det som redan är klart går fort. Hjälper inte det, mejla oss det som står.
 
 ---
 
