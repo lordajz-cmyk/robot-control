@@ -33,7 +33,7 @@
 
 // Firmware version
 #define FW_VERSION_MAJOR			30
-#define FW_VERSION_MINOR			2	// 30.2 (2026-09-29): Write-hängningen rättad, heartbeat i sekunder, stopp
+#define FW_VERSION_MINOR			3	// 30.3 (2026-09-30): som 30.2 + autopiloten sätter körriktningen. 30.2 (2026-09-29): Write-hängningen rättad, heartbeat i sekunder, stopp
 
 // IO BOARD
 // #define IO_BOARD
