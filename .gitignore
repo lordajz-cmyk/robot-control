@@ -33,3 +33,6 @@ besok_*.md
 installationsguide_sleipner.md
 *.pdf
 Skärmbild*.png
+
+# Python-cache
+__pycache__/
