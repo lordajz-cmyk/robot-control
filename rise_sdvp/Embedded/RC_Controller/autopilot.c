@@ -29,7 +29,7 @@
 #include "commands.h"
 #include "terminal.h"
 #include "comm_can.h"
-//#include "hydraulic.h"
+#include "hydraulic.h"
 #include "pos_uwb.h"
 #include "attributes_masks.h"
 //#include "servo_vesc.h"
