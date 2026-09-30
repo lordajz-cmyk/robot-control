@@ -124,18 +124,20 @@ if [ -z "$FW_NAME" ]; then
   echo -e " 1) ${BOLD}Drängen${NC}"
   echo -e " 2) ${BOLD}Mactrac${NC}"
   echo -e " 3) ${BOLD}RobAnt${NC} (VESC 28/36/76)"
-  read -p "Välj maskin (1, 2 eller 3): " M_CHOICE
+  echo -e " 4) ${BOLD}ROV_MCU${NC} (Upwis nya kort; flashas helst med flash_styrkort_rovmcu.sh)"
+  read -p "Välj maskin (1, 2, 3 eller 4): " M_CHOICE
   case "$M_CHOICE" in
     1) FW_NAME="drangen" ;;
     2) FW_NAME="mactrac" ;;
     3) FW_NAME="robant" ;;
+    4) FW_NAME="rovmcu" ;;
     *) echo -e "${RED}Ogiltigt val! Avbryter.${NC}"; exit 1 ;;
   esac
 else
   echo -e "\n${YELLOW}${BOLD}[Steg 1/3] Maskin: $FW_NAME${NC}"
   case "$FW_NAME" in
-    drangen|mactrac|robant) ;;
-    *) echo -e "${RED}Okänd maskin '$FW_NAME' (drangen, mactrac eller robant). Avbryter.${NC}"; exit 1 ;;
+    drangen|mactrac|robant|rovmcu) ;;
+    *) echo -e "${RED}Okänd maskin '$FW_NAME' (drangen, mactrac, robant eller rovmcu). Avbryter.${NC}"; exit 1 ;;
   esac
 fi
 
