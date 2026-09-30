@@ -48,12 +48,32 @@ fi
 # --- 3. RControlStation --------------------------------------------------------------
 steg "3/4 RControlStation"
 RCS_REPO=""
-for c in "$HOME/rise_sdvp" "$HOME/RControllStation/rise_sdvp" "$HOME/RControlStation/rise_sdvp"; do
-  if [ -d "$c/Linux/RControlStation" ] && [ -d "$c/.git" ]; then RCS_REPO="$c"; break; fi
+# 1. Där programmet faktiskt ligger: install_dator.sh bygger i den klonade mappen
+#    (var den än ligger) och länkar /usr/local/bin/RControlStation dit.
+for l in "$(command -v RControlStation 2>/dev/null)" /usr/local/bin/RControlStation "$HOME/.local/bin/RControlStation"; do
+  [ -n "$l" ] && [ -e "$l" ] || continue
+  d="$(readlink -f "$l")"
+  while [ -n "$d" ] && [ "$d" != "/" ]; do
+    if [ -d "$d/Linux/RControlStation" ] && [ -d "$d/.git" ]; then RCS_REPO="$d"; break 2; fi
+    d="$(dirname "$d")"
+  done
 done
+# 2. Vanliga platser, och annars en rise_sdvp-klon någonstans i hemmappen.
 if [ -z "$RCS_REPO" ]; then
-  echo "RControlStation är inte installerad (steg 8 i guiden) — hoppar över."
-  RESULTAT+=("RControlStation: inte installerad")
+  for c in "$HOME/rise_sdvp" "$HOME/RControllStation/rise_sdvp" "$HOME/RControlStation/rise_sdvp" \
+           $(find "$HOME" -maxdepth 6 -type d -path "*/Linux/RControlStation" -not -path "*/.*" 2>/dev/null | sed 's|/Linux/RControlStation$||'); do
+    if [ -d "$c/Linux/RControlStation" ] && [ -d "$c/.git" ]; then RCS_REPO="$c"; break; fi
+  done
+fi
+if [ -z "$RCS_REPO" ]; then
+  if command -v RControlStation >/dev/null 2>&1; then
+    echo -e "${YELLOW}RControlStation finns ($(readlink -f "$(command -v RControlStation)")), men inte i en git-klon av rise_sdvp — kan inte uppdatera den.${NC}"
+    echo "Installera om enligt steg 8 i guiden (git clone … ~/rise_sdvp, sudo bash install_dator.sh)."
+    RESULTAT+=("RControlStation: FEL, hittar ingen git-klon att uppdatera")
+  else
+    echo "RControlStation är inte installerad (steg 8 i guiden) — hoppar över."
+    RESULTAT+=("RControlStation: inte installerad")
+  fi
 elif ! git -C "$RCS_REPO" pull --ff-only; then
   echo -e "${RED}git pull i $RCS_REPO gick inte (ändrade filer?).${NC}"
   RESULTAT+=("RControlStation: FEL vid git pull")
@@ -85,7 +105,9 @@ PI="${PI:-$(cat "$KONF/pi" 2>/dev/null || echo robant@192.168.200.10)}"
 echo "Robot: $PI"
 # En och samma ssh-anslutning för allt, så att lösenordet bara behövs en gång.
 SOCK="$(mktemp -u /tmp/uppdatera_ssh.XXXXXX)"
-SSH=(ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="$SOCK" -o ControlPersist=600)
+# accept-new: första gången godkänns robotens nyckel utan yes/no-fråga (en ändrad
+# nyckel stoppas fortfarande).
+SSH=(ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -o ControlMaster=auto -o ControlPath="$SOCK" -o ControlPersist=600)
 if ! "${SSH[@]}" -o ServerAliveInterval=15 "$PI" true; then
   echo -e "${RED}Når inte roboten ($PI). Är den påslagen och WireGuard uppe?${NC}"
   RESULTAT+=("Roboten: FEL, gick inte att nå")
