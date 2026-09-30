@@ -140,6 +140,9 @@ if [ -n "$CLIENT_IP" ]; then
 # Denna maskins publika nyckel: $PUB_KEY
 PrivateKey = $PRIV_KEY
 Address = $CLIENT_IP/24
+# 1280: 4G-nät släpper inte alltid igenom WireGuards standard 1420 (stora paket
+# försvann, TCP stannade medan ping gick; MacBot 2026-09-30).
+MTU = 1280
 
 [Peer]
 PublicKey = $SERVER_PUB_KEY
