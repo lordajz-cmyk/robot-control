@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# uppdatera.sh — EN uppdatering av allt, körs på DATORN. Inga frågor utom lösenord.
+# uppdatera.sh — uppdaterar programmen på DATORN. Inga frågor utom lösenord.
 #
-#   cd ~/robot-control && bash scripts/uppdatera.sh
-#   PI=anvandare@192.168.200.x bash scripts/uppdatera.sh    annan robot (sparas till nästa gång)
+#   cd ~/robot-control && bash scripts/uppdatera.sh            datorn (det kunder kör)
+#   bash scripts/uppdatera.sh --robot                           datorn + roboten och styrkortet
+#   PI=anvandare@192.168.200.x bash scripts/uppdatera.sh --robot   annan robot (sparas)
 #
-# Ordning (datorn först: RControlStation måste känna till styrkortets nya
+# Kunder uppdaterar bara sin dator; roboten och styrkortet uppdaterar vi på distans
+# (--robot). Ordning (datorn först: RControlStation måste känna till styrkortets nya
 # firmwareversion innan kortet flashas, annars kopplar den ner direkt):
 #   1. git pull (robot-control), och skriptet startar om sig självt med den nya versionen
 #   2. Robotstyrning (scripts/install_client.sh)
 #   3. RControlStation, om den finns: git pull i rise_sdvp och ombyggnad
 #      (databasen med dosans inställningar behålls)
-#   4. Robotens Pi: koden skickas över och scripts/uppdatera_pi.sh körs där:
+#   4. Bara med --robot: robotens Pi får koden och kör scripts/uppdatera_pi.sh:
 #      Car_Client, robotd och styrkortets firmware (bara om versionen är ny)
 #
 # Stäng Robotstyrning och RControlStation innan. Robotens inställningar, WireGuard-
@@ -23,22 +25,33 @@ steg() { echo -e "\n${GREEN}##### $* #####${NC}"; }
 KONF="$HOME/.config/robot-control"
 RESULTAT=()
 
-if [ "${1:-}" != "--efter-pull" ]; then
+EFTER_PULL=0; ROBOT=0
+for a in "$@"; do
+  case "$a" in
+    --efter-pull) EFTER_PULL=1 ;;
+    --robot) ROBOT=1 ;;
+    *) echo -e "${RED}Okänt val: $a${NC} (bara --robot finns)"; exit 1 ;;
+  esac
+done
+ANTAL=3; [ "$ROBOT" -eq 1 ] && ANTAL=4
+
+if [ "$EFTER_PULL" -eq 0 ]; then
   if pgrep -x RControlStation >/dev/null || pgrep -x robotstyrning >/dev/null; then
     echo -e "${RED}Stäng Robotstyrning och RControlStation först, och kör sedan samma kommando igen.${NC}"
     exit 1
   fi
-  steg "1/4 Hämtar senaste versionen (git pull)"
+  steg "1/$ANTAL Hämtar senaste versionen (git pull)"
   if ! git pull --ff-only; then
     echo -e "${RED}git pull gick inte. Har filer i ~/robot-control ändrats för hand?${NC}"
     echo "Visa: git status    Ångra ändringarna: git checkout -- .    Kör sedan igen."
     exit 1
   fi
-  exec bash scripts/uppdatera.sh --efter-pull
+  ARGS=(--efter-pull); [ "$ROBOT" -eq 1 ] && ARGS+=(--robot)
+  exec bash scripts/uppdatera.sh "${ARGS[@]}"
 fi
 
 # --- 2. Robotstyrning --------------------------------------------------------------
-steg "2/4 Robotstyrning"
+steg "2/$ANTAL Robotstyrning"
 if bash scripts/install_client.sh; then
   RESULTAT+=("Robotstyrning: uppdaterad")
 else
@@ -46,7 +59,7 @@ else
 fi
 
 # --- 3. RControlStation --------------------------------------------------------------
-steg "3/4 RControlStation"
+steg "3/$ANTAL RControlStation"
 RCS_REPO=""
 # 1. Där programmet faktiskt ligger: install_dator.sh bygger i den klonade mappen
 #    (var den än ligger) och länkar /usr/local/bin/RControlStation dit.
@@ -99,7 +112,8 @@ else
   fi
 fi
 
-# --- 4. Robotens Pi och styrkortet ----------------------------------------------------
+# --- 4. Robotens Pi och styrkortet (bara med --robot) ---------------------------------
+if [ "$ROBOT" -eq 1 ]; then
 steg "4/4 Roboten (Pi:n och styrkortet)"
 PI="${PI:-$(cat "$KONF/pi" 2>/dev/null || echo robant@192.168.200.10)}"
 echo "Robot: $PI"
@@ -114,15 +128,9 @@ if ! "${SSH[@]}" -o ServerAliveInterval=15 "$PI" true; then
 else
   mkdir -p "$KONF" && echo "$PI" > "$KONF/pi"
   echo "--- Skickar koden till roboten ---"
-  # Byggda filer skickas aldrig: en Car_Client eller firmware byggd på den här
-  # datorn fungerar inte på Pi:n.
-  if rsync -a -e "${SSH[*]}" \
-       --exclude target --exclude .git --exclude osm_tiles --exclude '*.png' --exclude graphify-out \
-       --exclude 'rise_sdvp/Linux/Car_Client/Car_Client' --exclude '*.o' --exclude 'moc_*' \
-       --exclude 'qrc_*' --exclude 'ui_*.h' --exclude '.qmake.stash' \
-       --exclude 'rise_sdvp/Linux/Car_Client/Makefile' \
-       --exclude 'rise_sdvp/Embedded/RC_Controller/build' --exclude 'rise_sdvp/Embedded/RC_Controller/.dep' \
-       ./ "$PI:robot-control/"; then
+  # Bara filerna i git: inga byggda filer (en Car_Client eller firmware byggd på
+  # den här datorn fungerar inte på Pi:n) och inga lokala/interna filer.
+  if git ls-files -z | rsync -a --from0 --files-from=- -e "${SSH[*]}" ./ "$PI:robot-control/"; then
     if "${SSH[@]}" -t "$PI" "cd robot-control && bash scripts/uppdatera_pi.sh"; then
       RESULTAT+=("Roboten: Car_Client, robotd och styrkortet uppdaterade")
     else
@@ -133,6 +141,7 @@ else
   fi
   "${SSH[@]}" -O exit "$PI" 2>/dev/null
 fi
+fi
 
 steg "Sammanfattning"
 ALLT_OK=1
@@ -141,6 +150,7 @@ for r in "${RESULTAT[@]}"; do
 done
 if [ "$ALLT_OK" -eq 1 ]; then
   echo -e "\n${GREEN}Allt är uppdaterat. Starta Robotstyrning eller RControlStation som vanligt.${NC}"
+  [ "$ROBOT" -eq 1 ] || echo "(Roboten och styrkortet uppdaterar vi på distans.)"
 else
   echo -e "\n${YELLOW}Något blev inte klart. Kör samma kommando igen; det som redan är klart går fort.${NC}"
   exit 1

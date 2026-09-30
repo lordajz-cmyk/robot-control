@@ -274,16 +274,15 @@ sidan = sväng. **Max** (hur fort den får köra) står på `0.42`.
 När vi säger att det finns en ny version:
 
 1. **Stäng Robotstyrning och RControlStation.**
-2. Se till att **roboten är påslagen** och står stilla.
-3. Klistra in:
+2. Klistra in:
 ```
 cd ~/robot-control && git pull && bash scripts/uppdatera.sh
 ```
 
-Det uppdaterar allt i rätt ordning, utan frågor: Robotstyrning, RControlStation (om du
-har den), programmen på roboten och robotens styrkort. Datorn frågar efter ditt
-lösenord och sedan efter robotens lösenord (samma som vid installationen).
-**Det tar 10–30 minuter.** ☕
+Det uppdaterar programmen på din dator, utan frågor: Robotstyrning och RControlStation
+(om du har den). Datorn kan fråga efter ditt lösenord. **Det tar 5–20 minuter.** ☕
+
+Roboten och dess styrkort behöver du inte göra något med: dem uppdaterar vi på distans.
 
 ✅ **Klart** när det står `Allt är uppdaterat.` Står det något i rött: kör samma kommando
 igen, det som redan är klart går fort. Hjälper inte det, mejla oss det som står.
