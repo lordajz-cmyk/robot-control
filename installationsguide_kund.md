@@ -276,7 +276,7 @@ När vi säger att det finns en ny version:
 1. **Stäng Robotstyrning och RControlStation.**
 2. Klistra in:
 ```
-cd ~/robot-control && git pull && bash scripts/uppdatera.sh
+cd ~/robot-control && git pull && bash scripts/uppdatera_dator.sh
 ```
 
 Det uppdaterar programmen på din dator, utan frågor: Robotstyrning och RControlStation
@@ -284,7 +284,7 @@ Det uppdaterar programmen på din dator, utan frågor: Robotstyrning och RContro
 
 Roboten och dess styrkort behöver du inte göra något med: dem uppdaterar vi på distans.
 
-✅ **Klart** när det står `Allt är uppdaterat.` Står det något i rött: kör samma kommando
+✅ **Klart** när det står `Datorn är uppdaterad.` Står det något i rött: kör samma kommando
 igen, det som redan är klart går fort. Hjälper inte det, mejla oss det som står.
 
 ---

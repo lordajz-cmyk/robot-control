@@ -149,5 +149,5 @@ echo
 echo -e "${GREEN}=== Klart: $NAMN ===${NC}"
 echo "Anslut med robotstyrning till: $NAMN  (eller $IP)"
 echo "Logg på roboten:    ssh ${ANV}@${IP} journalctl -u robotd -f"
-echo "Uppdatera allt:     bash scripts/uppdatera.sh --robot   (dator, robot och styrkort)"
+echo "Uppdatera allt:     bash scripts/uppdatera.sh   (dator, robot och styrkort; kunder: uppdatera_dator.sh)"
 echo "Flasha styrkortet:  på Pi:n: cd robot-control && ./flash_styrkort.sh"
