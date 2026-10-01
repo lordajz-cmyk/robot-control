@@ -636,6 +636,17 @@ void CarClient::rebootSystem(bool powerOff)
     process.start(cmd, args);
     waitProcess(process);
 
+    // Avsluta bara om omstarten/avstängningen faktiskt startade. Kräver sudo
+    // lösenord (eller saknas rättighet) misslyckas kommandot, och då ska
+    // Car_Client fortsätta köra – annars står roboten utan Car_Client tills
+    // någon startar om tjänsten för hand (hände på RobAnt 3 2026-10-01).
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        qWarning() << (powerOff ? "Shutdown" : "Reboot") << "failed (exit code"
+                   << process.exitCode() << "), Car_Client keeps running:"
+                   << process.readAllStandardError().trimmed();
+        return;
+    }
+
     qApp->quit();
 }
 
