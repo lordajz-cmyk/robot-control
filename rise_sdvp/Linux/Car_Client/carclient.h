@@ -27,6 +27,7 @@
 #include <QProcess>
 #include <QImage>
 #include <QLocalServer>
+#include <QElapsedTimer>
 #include "packetinterface.h"
 #include "tcpbroadcast.h"
 //#include <QSerialPort>
@@ -80,6 +81,7 @@ public:
     void logStop();
     void rtcmRx(QByteArray data, int type);
     void restartRtklib();
+    void configureUblox();
     Q_INVOKABLE PacketInterface* packetInterface();
     bool isRtklibRunning();
     quint8 carId();
@@ -158,6 +160,9 @@ private:
     Ublox *mUblox;
     bool mRtklibRunning;
     QString mUbloxDevice; // Riktig tty bakom /dev/ublox när porten öppnades (t.ex. /dev/ttyACM1)
+    QElapsedTimer mRawxTimer;      // tid sedan senaste RAWX från u-bloxen
+    QElapsedTimer mUbloxCfgTimer;  // tid sedan u-bloxen senast fick sina inställningar
+    int mUbloxCfgRetries = 0;      // omkonfigureringar i rad utan att RAWX kommit tillbaka
     int mBatteryCells;
     QList<CarSim*> mSimulatedCars;
     QVector<UWB_ANCHOR> mUwbAnchorsNow;

@@ -463,6 +463,59 @@ void CarClient::rtcmRx(QByteArray data, int type)
     printTerminal(str);
 }
 
+void CarClient::configureUblox()
+{
+    // Inställningarna ligger bara i u-bloxens RAM och försvinner när den startar om
+    // (t.ex. när styrkortet flashas eller återställs), därför kan de skickas igen.
+    // Serial port baud rate
+    // if it is too low the buffer will overfill and it won't work properly.
+    ubx_cfg_prt_uart uart;
+    uart.baudrate = 115200;
+    uart.in_ubx = true;
+    uart.in_nmea = true;
+    uart.in_rtcm2 = false;
+    uart.in_rtcm3 = true;
+    uart.out_ubx = true;
+    uart.out_nmea = true;
+    uart.out_rtcm3 = true;
+    mUblox->ubxCfgPrtUart(&uart);
+
+    // Set configuration
+    // Switch on RAWX and NMEA messages, set rate to 1 Hz and time reference to UTC
+    mUblox->ubxCfgRate(200, 1, 0);
+    mUblox->ubxCfgMsg(UBX_CLASS_RXM, UBX_RXM_RAWX, 1); // Every second
+    mUblox->ubxCfgMsg(UBX_CLASS_RXM, UBX_RXM_SFRBX, 1); // Every second
+    mUblox->ubxCfgMsg(UBX_CLASS_NMEA, UBX_NMEA_GGA, 1); // Every second
+
+    // Automotive dynamic model
+    ubx_cfg_nav5 nav5;
+    memset(&nav5, 0, sizeof(ubx_cfg_nav5));
+    nav5.apply_dyn = true;
+    nav5.dyn_model = 4;
+    mUblox->ubxCfgNav5(&nav5);
+
+    // Time pulse configuration
+    ubx_cfg_tp5 tp5;
+    memset(&tp5, 0, sizeof(ubx_cfg_tp5));
+    tp5.active = true;
+    tp5.polarity = true;
+    tp5.alignToTow = true;
+    tp5.lockGnssFreq = true;
+    tp5.lockedOtherSet = true;
+    tp5.syncMode = false;
+    tp5.isFreq = false;
+    tp5.isLength = true;
+    tp5.freq_period = 1000000;
+    tp5.pulse_len_ratio = 0;
+    tp5.freq_period_lock = 1000000;
+    tp5.pulse_len_ratio_lock = 100000;
+    tp5.gridUtcGnss = 0;
+    tp5.user_config_delay = 0;
+    tp5.rf_group_delay = 0;
+    tp5.ant_cable_delay = 50;
+    mUblox->ubloxCfgTp5(&tp5);
+}
+
 void CarClient::restartRtklib()
 {
     QFile ublox("/dev/ublox");
@@ -477,53 +530,10 @@ void CarClient::restartRtklib()
 
     if (mUblox->connectSerial(ublox.fileName())) {
         mUbloxDevice = QFileInfo(ublox.fileName()).canonicalFilePath();
-        // Serial port baud rate
-        // if it is too low the buffer will overfill and it won't work properly.
-        ubx_cfg_prt_uart uart;
-        uart.baudrate = 115200;
-        uart.in_ubx = true;
-        uart.in_nmea = true;
-        uart.in_rtcm2 = false;
-        uart.in_rtcm3 = true;
-        uart.out_ubx = true;
-        uart.out_nmea = true;
-        uart.out_rtcm3 = true;
-        mUblox->ubxCfgPrtUart(&uart);
-
-        // Set configuration
-        // Switch on RAWX and NMEA messages, set rate to 1 Hz and time reference to UTC
-        mUblox->ubxCfgRate(200, 1, 0);
-        mUblox->ubxCfgMsg(UBX_CLASS_RXM, UBX_RXM_RAWX, 1); // Every second
-        mUblox->ubxCfgMsg(UBX_CLASS_RXM, UBX_RXM_SFRBX, 1); // Every second
-        mUblox->ubxCfgMsg(UBX_CLASS_NMEA, UBX_NMEA_GGA, 1); // Every second
-
-        // Automotive dynamic model
-        ubx_cfg_nav5 nav5;
-        memset(&nav5, 0, sizeof(ubx_cfg_nav5));
-        nav5.apply_dyn = true;
-        nav5.dyn_model = 4;
-        mUblox->ubxCfgNav5(&nav5);
-
-        // Time pulse configuration
-        ubx_cfg_tp5 tp5;
-        memset(&tp5, 0, sizeof(ubx_cfg_tp5));
-        tp5.active = true;
-        tp5.polarity = true;
-        tp5.alignToTow = true;
-        tp5.lockGnssFreq = true;
-        tp5.lockedOtherSet = true;
-        tp5.syncMode = false;
-        tp5.isFreq = false;
-        tp5.isLength = true;
-        tp5.freq_period = 1000000;
-        tp5.pulse_len_ratio = 0;
-        tp5.freq_period_lock = 1000000;
-        tp5.pulse_len_ratio_lock = 100000;
-        tp5.gridUtcGnss = 0;
-        tp5.user_config_delay = 0;
-        tp5.rf_group_delay = 0;
-        tp5.ant_cable_delay = 50;
-        mUblox->ubloxCfgTp5(&tp5);
+        configureUblox();
+        mRawxTimer.start();
+        mUbloxCfgTimer.start();
+        mUbloxCfgRetries = 0;
     }
 
     QString user = qgetenv("USER");
@@ -1018,6 +1028,21 @@ void CarClient::reconnectTimerSlot()
         qDebug() << "u-blox moved from" << mUbloxDevice << "to"
                  << QFileInfo("/dev/ublox").canonicalFilePath() << ", reconnecting and restarting rtklib...";
         restartRtklib();
+    } else if (mRtklibRunning && mUblox->isSerialConnected() && mRawxTimer.isValid() &&
+               mRawxTimer.elapsed() > 10000 && mUbloxCfgTimer.elapsed() > 10000) {
+        // Porten är öppen men ingen RAWX: u-bloxen har startat om (styrkortet flashat
+        // eller återställt) och tappat sina inställningar, utan att USB försvann. Skicka
+        // inställningarna igen; hjälper inte det på tre försök, öppna porten på nytt.
+        if (mUbloxCfgRetries < 3) {
+            mUbloxCfgRetries++;
+            qDebug() << "No RAWX from u-blox for" << mRawxTimer.elapsed() / 1000
+                     << "s, sending configuration again (attempt" << mUbloxCfgRetries << ")";
+            configureUblox();
+            mUbloxCfgTimer.restart();
+        } else {
+            qDebug() << "Still no RAWX from u-blox, reconnecting and restarting rtklib...";
+            restartRtklib();
+        }
     }
 
     if (mSettings.nmeaConnect && !mTcpConnected) {
@@ -1139,6 +1164,9 @@ void CarClient::ubxRx(const QByteArray &data)
 
 void CarClient::rxRawx(ubx_rxm_rawx rawx)
 {
+    mRawxTimer.restart();
+    mUbloxCfgRetries = 0;
+
     if (!rawx.leap_sec || rawx.week < 2000) {
         // Leap seconds or week number are not known yet...
         return;
