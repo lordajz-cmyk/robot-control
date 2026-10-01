@@ -251,13 +251,26 @@ START_SCRIPT="$REAL_HOME/start_car.sh"
 # Fördröjningen ligger INUTI screen så att skriptet returnerar direkt. En blockerande
 # "sleep 90" före screen fick systemd (Type=forking, standardtimeout 90 s) att ge upp
 # och markera car_client.service som misslyckad vid uppstart.
+# Car_Client körs i en slinga: avslutas eller kraschar den startas den om efter 3 s, så
+# att roboten aldrig blir stående utan den (hände på RobAnt 3 2026-10-01 när "Shut down
+# Raspberry Pi" i RControlStation misslyckades och Car_Client ändå avslutades).
 cat <<EOF > "$START_SCRIPT"
 #!/bin/bash
-# Startar Car_Client i en bakgrunds-screen med en initial fördröjning inuti screen (icke-blockerande för systemd)
-screen -S car -d -m bash -c "sleep 15 && cd '$CLIENT_DIR' && ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210 --setid ${CAR_ID:-4}; bash"
+# Startar Car_Client i en bakgrunds-screen (namn "car") med en initial fördröjning inuti
+# screen (icke-blockerande för systemd). Avslutas Car_Client startas den om efter 3 s.
+screen -S car -d -m bash -c "sleep 15; cd '$CLIENT_DIR'; while true; do ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210 --setid ${CAR_ID:-4}; echo \"\\\$(date +%T) Car_Client avslutades (kod \\\$?), startar om om 3 s\" | tee -a '$REAL_HOME/car_client_omstarter.log'; sleep 3; done"
 echo "Car_Client startades i en screen-session med namnet 'car'."
 echo "För att ansluta live, kör: screen -r car"
 EOF
+
+# "Reboot/Shut down Raspberry Pi" i RControlStation kör "sudo reboot" / "sudo shutdown"
+# från Car_Client: tillåt just de två utan lösenord, annars misslyckas de.
+SUDOERS_FIL="/etc/sudoers.d/${REAL_USER}-avstangning"
+echo "$REAL_USER ALL=(root) NOPASSWD: /usr/sbin/reboot, /usr/sbin/shutdown, /sbin/reboot, /sbin/shutdown" > /tmp/avstangning.sudoers
+if visudo -c -f /tmp/avstangning.sudoers >/dev/null; then
+  install -m 440 /tmp/avstangning.sudoers "$SUDOERS_FIL"
+fi
+rm -f /tmp/avstangning.sudoers
 
 chown "$REAL_USER:$REAL_USER" "$START_SCRIPT"
 chmod +x "$START_SCRIPT"
