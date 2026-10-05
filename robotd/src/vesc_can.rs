@@ -138,6 +138,10 @@ pub const CMD_GET_STATE: u8 = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoardState {
+    /// Lutning åt sidan, framåt/bakåt och kurs (grader), från styrkortets IMU.
+    pub roll_deg: f32,
+    pub pitch_deg: f32,
+    pub yaw_deg: f32,
     /// m/s, från styrkortets positionsberäkning.
     pub speed_ms: f32,
     /// Batterispänning (VESC:ns v_in).
@@ -162,11 +166,52 @@ pub fn parse_state_reply(payload: &[u8]) -> Option<BoardState> {
         i32::from_be_bytes([payload[at], payload[at + 1], payload[at + 2], payload[at + 3]]) as f32 / scale
     };
     Some(BoardState {
+        roll_deg: f(4, 1e6),
+        pitch_deg: f(8, 1e6),
+        yaw_deg: f(12, 1e6),
         speed_ms: f(60, 1e6),
         v_in: f(64, 1e6),
         temp_mos: f(68, 1e6),
         fault_code: payload[72],
     })
+}
+
+/// VESC:ns felkod (`mc_fault_code` i firmwarens datatypes.h) i klartext.
+pub fn fault_text(code: u8) -> Option<String> {
+    let s = match code {
+        0 => return None,
+        1 => "Överspänning – batterispänningen är för hög",
+        2 => "Underspänning – batteriet är för lågt (ladda)",
+        3 => "Fel i motordrivaren (DRV)",
+        4 => "För hög motorström",
+        5 => "VESC överhettad (transistorerna)",
+        6 => "Motorn överhettad",
+        n => return Some(format!("VESC-fel, kod {n}")),
+    };
+    Some(s.to_string())
+}
+
+/// `CMD_TERMINAL_CMD` (1): skicka ett terminalkommando till styrkortet, som
+/// terminalen i RControlStation. Svaret kommer som `CMD_PRINTF` (0).
+pub const CMD_TERMINAL_CMD: u8 = 1;
+pub const CMD_PRINTF: u8 = 0;
+
+pub fn make_terminal_cmd(car_id: u8, cmd: &str) -> Vec<u8> {
+    let mut v = vec![car_id, CMD_TERMINAL_CMD];
+    v.extend(cmd.as_bytes());
+    v
+}
+
+/// Vinkelgivarens svar på terminalkommandot `vinkel` (RobAnt-firmware, adconv.c):
+/// "Vinkelgivare: 2500 mV, vinkel 3.2 grader, OK". Ger (vinkel, givaren OK).
+/// Andra utskrifter ger `None`.
+pub fn parse_angle_printf(payload: &[u8]) -> Option<(f32, bool)> {
+    let [_id, CMD_PRINTF, text @ ..] = payload else { return None };
+    let text = String::from_utf8_lossy(text);
+    let rest = text.split("Vinkelgivare:").nth(1)?;
+    let after = rest.split("vinkel").nth(1)?;
+    let deg: f32 = after.split_whitespace().next()?.trim_end_matches(',').parse().ok()?;
+    Some((deg, rest.contains(", OK")))
 }
 
 /// `CMD_RC_CONTROL_ADV` (125): samma kommando som RControlStation skickar när
@@ -202,6 +247,27 @@ mod tests {
     #[test]
     fn statusfraga_har_ratt_form() {
         assert_eq!(make_vesc_status_request(4), vec![4, 140]);
+    }
+
+    #[test]
+    fn vinkelsvaret_tolkas() {
+        let mut p = vec![4, CMD_PRINTF];
+        p.extend(b"Vinkelgivare: 2350 mV, vinkel -10.8 grader, OK\n");
+        assert_eq!(parse_angle_printf(&p), Some((-10.8, true)));
+        let mut p = vec![4, CMD_PRINTF];
+        p.extend(b"Vinkelgivare: 40 mV, vinkel 0.0 grader, FEL (ingen magnet/kabel?)\n");
+        assert_eq!(parse_angle_printf(&p), Some((0.0, false)));
+        let mut p = vec![4, CMD_PRINTF];
+        p.extend(b"Activity 10 -> 2 actuator(s)");
+        assert_eq!(parse_angle_printf(&p), None);
+        assert_eq!(make_terminal_cmd(4, "vinkel"), vec![4, 1, b'v', b'i', b'n', b'k', b'e', b'l']);
+    }
+
+    #[test]
+    fn felkoder_i_klartext() {
+        assert_eq!(fault_text(0), None);
+        assert!(fault_text(2).unwrap().contains("Underspänning"));
+        assert_eq!(fault_text(42).unwrap(), "VESC-fel, kod 42");
     }
 
     #[test]
@@ -246,8 +312,11 @@ mod tests {
     #[test]
     fn tillstandssvar_tolkas() {
         let mut p = vec![4, CMD_GET_STATE, 10, 5];
-        for _ in 0..14 {
-            p.extend(0i32.to_be_bytes()); // roll .. py
+        p.extend(3_500_000i32.to_be_bytes()); // roll 3.5°
+        p.extend((-2_000_000i32).to_be_bytes()); // pitch -2°
+        p.extend(123_000_000i32.to_be_bytes()); // yaw 123°
+        for _ in 0..11 {
+            p.extend(0i32.to_be_bytes()); // accel, gyro, mag, px, py
         }
         p.extend(1_250_000i32.to_be_bytes()); // speed 1.25 m/s
         p.extend(52_600_000i32.to_be_bytes()); // v_in 52.6 V
@@ -259,6 +328,9 @@ mod tests {
         assert!((st.v_in - 52.6).abs() < 1e-4);
         assert!((st.temp_mos - 31.5).abs() < 1e-4);
         assert_eq!(st.fault_code, 0);
+        assert!((st.roll_deg - 3.5).abs() < 1e-4);
+        assert!((st.pitch_deg + 2.0).abs() < 1e-4);
+        assert!((st.yaw_deg - 123.0).abs() < 1e-4);
         assert_eq!(parse_state_reply(&p[..60]), None); // för kort
         assert_eq!(parse_state_reply(&[4, 140]), None);
     }

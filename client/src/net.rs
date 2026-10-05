@@ -43,6 +43,15 @@ pub struct NetLink {
     pub last_view_code: Option<String>,
     /// Senaste svar om styrkortets aktuatorer, plockas upp av Settings-vyn.
     pub actuator_reply: Option<ActuatorReply>,
+    /// Senaste svar om körloggarna (lista eller fil), plockas upp av körloggsfönstret.
+    pub drive_log_reply: Option<DriveLogReply>,
+}
+
+/// Svar från robotd om körloggarna.
+pub enum DriveLogReply {
+    List(Vec<relay_protocol::DriveLogInfo>),
+    File { name: String, csv: String },
+    Error(String),
 }
 
 /// Svar från robotd på läsning/skrivning av styrkortets aktuatorer.
@@ -65,6 +74,7 @@ enum LinkUpdate {
     VescProfileSaved,
     ViewCode(String),
     Actuators(ActuatorReply),
+    DriveLogs(DriveLogReply),
 }
 
 impl NetLink {
@@ -83,6 +93,7 @@ impl NetLink {
             vesc_profile_saved: false,
             last_view_code: None,
             actuator_reply: None,
+            drive_log_reply: None,
         }
     }
 
@@ -135,6 +146,7 @@ impl NetLink {
                 LinkUpdate::VescProfileSaved => self.vesc_profile_saved = true,
                 LinkUpdate::ViewCode(code) => self.last_view_code = Some(code),
                 LinkUpdate::Actuators(r) => self.actuator_reply = Some(r),
+                LinkUpdate::DriveLogs(r) => self.drive_log_reply = Some(r),
             }
         }
     }
@@ -192,6 +204,18 @@ impl NetLink {
     pub fn write_actuators(&self, config: ActuatorConfig) {
         if let Some(tx) = &self.request_tx {
             let _ = tx.try_send(ClientMessage::WriteActuators(config));
+        }
+    }
+
+    pub fn list_drive_logs(&self) {
+        if let Some(tx) = &self.request_tx {
+            let _ = tx.try_send(ClientMessage::ListDriveLogs);
+        }
+    }
+
+    pub fn get_drive_log(&self, name: &str) {
+        if let Some(tx) = &self.request_tx {
+            let _ = tx.try_send(ClientMessage::GetDriveLog { name: name.to_string() });
         }
     }
 
@@ -279,6 +303,15 @@ async fn run_connection(
                                 }
                                 RobotMessage::ActuatorError(e) => {
                                     let _ = updates_tx.send(LinkUpdate::Actuators(ActuatorReply::Error(e))).await;
+                                }
+                                RobotMessage::DriveLogs(list) => {
+                                    let _ = updates_tx.send(LinkUpdate::DriveLogs(DriveLogReply::List(list))).await;
+                                }
+                                RobotMessage::DriveLog { name, csv } => {
+                                    let _ = updates_tx.send(LinkUpdate::DriveLogs(DriveLogReply::File { name, csv })).await;
+                                }
+                                RobotMessage::DriveLogError(e) => {
+                                    let _ = updates_tx.send(LinkUpdate::DriveLogs(DriveLogReply::Error(e))).await;
                                 }
                                 _ => {}
                             }

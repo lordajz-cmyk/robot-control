@@ -41,6 +41,10 @@ pub enum ClientMessage {
     ReadActuators,
     /// Skriv aktuatorinställningarna till styrkortet (som Write). Bara förare.
     WriteActuators(ActuatorConfig),
+    /// Lista körloggarna på roboten.
+    ListDriveLogs,
+    /// Hämta en körlogg (namn från `DriveLogs`).
+    GetDriveLog { name: String },
 }
 
 /// Skickas av robotd till en ansluten klient.
@@ -62,6 +66,12 @@ pub enum RobotMessage {
     ActuatorsWritten(ActuatorConfig),
     /// Läsning/skrivning av aktuatorer misslyckades; inget ändrat om inget annat sägs.
     ActuatorError(String),
+    /// Svar på ListDriveLogs, nyaste först.
+    DriveLogs(Vec<DriveLogInfo>),
+    /// Svar på GetDriveLog: hela CSV-filen.
+    DriveLog { name: String, csv: String },
+    /// Körloggarna gick inte att läsa.
+    DriveLogError(String),
 }
 
 /// En aktuator på styrkortet: vilken motor som styrs av vilken aktivitet.
@@ -104,7 +114,7 @@ pub struct ControlCommand {
     pub max_output: Option<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StatusUpdate {
     pub speed_kmh: Option<f32>,
     pub battery_percent: Option<f32>,
@@ -121,12 +131,59 @@ pub struct StatusUpdate {
     /// VESC-ID som ska finnas på roboten (robotd:s `known_vesc_ids`).
     #[serde(default)]
     pub vescs_expected: Vec<u8>,
+
+    // --- Fordonsdata (2026-10-05). Alla är `Option`/`default`, så att en äldre
+    // robotd eller klient fungerar som förut: saknade värden visas som "–".
+    /// Laddas batteriet? `Some(true)` = spänningen stiger när roboten står still,
+    /// `Some(false)` = den sjunker eller står still, `None` = går inte att avgöra (kör).
+    #[serde(default)]
+    pub battery_charging: Option<bool>,
+    /// Effekt ur batteriet just nu (W), uppskattad från VESC:ernas ström och duty.
+    #[serde(default)]
+    pub power_w: Option<f32>,
+    /// Förbrukning under körningen (Wh/km).
+    #[serde(default)]
+    pub wh_per_km: Option<f32>,
+    /// Beräknad räckvidd med kvarvarande batteri (km). Kräver batterikapacitet i robotd:s config.
+    #[serde(default)]
+    pub range_km: Option<f32>,
+    /// Styrvinkel i grader från vinkelgivaren (+ = höger).
+    #[serde(default)]
+    pub steering_deg: Option<f32>,
+    /// Styrvinkel i procent av största utslag (−100 = fullt vänster, +100 = fullt höger).
+    #[serde(default)]
+    pub steering_percent: Option<f32>,
+    /// Lutning åt sidan, framåt/bakåt och kurs (grader) från styrkortets IMU.
+    #[serde(default)]
+    pub roll_deg: Option<f32>,
+    #[serde(default)]
+    pub pitch_deg: Option<f32>,
+    #[serde(default)]
+    pub yaw_deg: Option<f32>,
+    /// Aktuell felkod från styrkortet/VESC i klartext (t.ex. "Underspänning").
+    #[serde(default)]
+    pub fault_text: Option<String>,
+    /// Mobilnätets signalstyrka från robotens router (dBm).
+    #[serde(default)]
+    pub rssi_dbm: Option<i32>,
+    /// Mer om mobilnätet, t.ex. "4G Telia · RSRP −95 dBm · SINR 12 dB".
+    #[serde(default)]
+    pub signal_info: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+/// En körlogg på roboten (CSV, en per körning).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DriveLogInfo {
+    /// Filnamn, t.ex. "2026-10-05_14-03-22.csv".
+    pub name: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum LinkQuality {
     Green,
     Yellow,
+    #[default]
     Red,
 }
 

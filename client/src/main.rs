@@ -8,6 +8,7 @@
 //! Språk: svenska.
 
 mod gamepad;
+mod hud;
 mod net;
 mod settings;
 mod video;
@@ -34,7 +35,14 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Robotstyrning",
         options,
-        Box::new(move |_cc| Box::new(App::new(rt_handle))),
+        Box::new(move |_cc| {
+            let mut app = App::new(rt_handle);
+            // `robotstyrning <adress>` ansluter direkt (t.ex. 127.0.0.1 mot mock-robotd).
+            if let Some(target) = std::env::args().nth(1) {
+                app.connect_to(target);
+            }
+            Box::new(app)
+        }),
     )
 }
 
@@ -92,6 +100,13 @@ struct App {
     video_texture: Option<egui::TextureHandle>,
     /// Förarens Max (0..1) som i RControlStation, sparas mellan körningar.
     max_output: f32,
+    /// Körloggsfönstret: öppet, listan från roboten och senaste meddelande.
+    logs_open: bool,
+    logs: Vec<relay_protocol::DriveLogInfo>,
+    logs_message: String,
+    /// För tester (`ROBOTSTYRNING_SKARMBILD`): när appen startade och om skärmbilden begärts.
+    started: Instant,
+    screenshot_requested: bool,
 }
 
 impl App {
@@ -116,6 +131,11 @@ impl App {
             video_port: 9001,
             video_texture: None,
             max_output: load_max_output(),
+            logs_open: false,
+            logs: Vec::new(),
+            logs_message: String::new(),
+            started: Instant::now(),
+            screenshot_requested: false,
         }
     }
 
@@ -133,6 +153,7 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.test_screenshot(ctx);
         // Fel 1 (testrapport 2026-09-19): måste köras HÄR, inte bara i
         // draw_driving_screen, annars slutar klienten läsa nätverket så
         // fort en annan skärm (t.ex. Settings) visas — kön fylls och hela
@@ -386,15 +407,18 @@ impl App {
                     .fixed_pos(rect.left_top() + egui::vec2(16.0, 16.0))
                     .show(ctx, |ui| {
                         egui::Frame::none()
-                            .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 170))
-                            .inner_margin(egui::Margin::symmetric(12.0, 8.0))
-                            .rounding(6.0)
+                            .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 175))
+                            .inner_margin(egui::Margin::symmetric(12.0, 10.0))
+                            .rounding(8.0)
                             .show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(self.status_text())
-                                        .color(egui::Color32::from_rgb(140, 255, 140))
-                                        .size(16.0)
-                                        .strong(),
+                                // Blinkar ungefär en gång per sekund vid låg batterinivå.
+                                let blink = (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0;
+                                hud::show(
+                                    ui,
+                                    self.net.fresh_status(),
+                                    self.net.last_ping_ms,
+                                    &self.video.status_line(),
+                                    blink,
                                 );
                             });
                     });
@@ -459,6 +483,11 @@ impl App {
                                 save_max_output(self.max_output);
                             }
 
+                            if ui.button("Loggar").on_hover_text("Körloggar: hämta loggar från roboten").clicked() {
+                                self.logs_open = true;
+                                self.logs_message = "Hämtar listan…".to_string();
+                                self.net.list_drive_logs();
+                            }
                             if ui.button("⚙").on_hover_text("Inställningar").clicked() {
                                 self.screen = Screen::Settings;
                             }
@@ -506,11 +535,113 @@ impl App {
                 }
             });
 
+        self.draw_logs_window(ctx);
+
         // Rita ramen SIST, på ett eget lager ovanpå allt annat innehåll.
         // Tidigare låg den som Frame-stroke bakom kamerabildens
         // rect_filled, så den syntes aldrig (Fel 2, testrapport 2026-09-19).
         ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("border")))
-            .rect_stroke(ctx.screen_rect(), 0.0, egui::Stroke::new(6.0, border));
+            .rect_stroke(ctx.screen_rect(), 0.0, egui::Stroke::new(6.0_f32, border));
+    }
+
+    /// För tester: `ROBOTSTYRNING_SKARMBILD=fil.ppm` sparar en skärmbild av fönstret
+    /// efter 10 s (eller `ROBOTSTYRNING_SKARMBILD_S`) och avslutar programmet.
+    /// `ROBOTSTYRNING_LOGGFONSTER=1` öppnar körloggsfönstret direkt.
+    fn test_screenshot(&mut self, ctx: &egui::Context) {
+        let Some(path) = std::env::var_os("ROBOTSTYRNING_SKARMBILD") else { return };
+        let secs = std::env::var("ROBOTSTYRNING_SKARMBILD_S").ok().and_then(|v| v.parse().ok()).unwrap_or(10u64);
+        if std::env::var_os("ROBOTSTYRNING_LOGGFONSTER").is_some()
+            && !self.logs_open
+            && self.started.elapsed() > Duration::from_secs(secs / 2)
+            && matches!(self.screen, Screen::Driving)
+        {
+            self.logs_open = true;
+            self.net.list_drive_logs();
+        }
+        let image = ctx.input(|i| {
+            i.raw.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(img) = image {
+            let mut ppm = format!("P6\n{} {}\n255\n", img.size[0], img.size[1]).into_bytes();
+            for p in &img.pixels {
+                ppm.extend([p.r(), p.g(), p.b()]);
+            }
+            let _ = std::fs::write(path, ppm);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if !self.screenshot_requested && self.started.elapsed() > Duration::from_secs(secs) {
+            self.screenshot_requested = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+        }
+        ctx.request_repaint_after(Duration::from_millis(200));
+    }
+
+    /// Körloggarna på roboten: lista, hämta och spara som CSV i Hämtningar.
+    fn draw_logs_window(&mut self, ctx: &egui::Context) {
+        if let Some(reply) = self.net.drive_log_reply.take() {
+            match reply {
+                net::DriveLogReply::List(l) => {
+                    self.logs_message = if l.is_empty() {
+                        "Inga körloggar på roboten ännu.".to_string()
+                    } else {
+                        format!("{} körloggar (nyaste först).", l.len())
+                    };
+                    self.logs = l;
+                }
+                net::DriveLogReply::File { name, csv } => {
+                    self.logs_message = match save_drive_log(&name, &csv) {
+                        Ok(path) => format!("Sparad: {}", path.display()),
+                        Err(e) => format!("Kunde inte spara {name}: {e}"),
+                    };
+                }
+                net::DriveLogReply::Error(e) => self.logs_message = format!("Fel: {e}"),
+            }
+        }
+        if !self.logs_open {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Körloggar")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(420.0)
+            .show(ctx, |ui| {
+                ui.label("En logg per körning, en rad per sekund (fart, batteri, styrning, lutning, fel, signal).");
+                ui.horizontal(|ui| {
+                    if ui.button("Uppdatera").clicked() {
+                        self.logs_message = "Hämtar listan…".to_string();
+                        self.net.list_drive_logs();
+                    }
+                    if ui.button("Öppna mappen").clicked() {
+                        if let Some(dir) = drive_log_dir() {
+                            let _ = std::fs::create_dir_all(&dir);
+                            let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+                        }
+                    }
+                });
+                ui.label(egui::RichText::new(&self.logs_message).weak());
+                ui.separator();
+                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                    let mut fetch: Option<String> = None;
+                    for log in &self.logs {
+                        ui.horizontal(|ui| {
+                            ui.monospace(&log.name);
+                            ui.label(egui::RichText::new(format!("{:.0} kB", log.bytes as f64 / 1024.0)).weak());
+                            if ui.button("Spara").clicked() {
+                                fetch = Some(log.name.clone());
+                            }
+                        });
+                    }
+                    if let Some(name) = fetch {
+                        self.logs_message = format!("Hämtar {name}…");
+                        self.net.get_drive_log(&name);
+                    }
+                });
+            });
+        self.logs_open = open;
     }
 
     /// Kamerabild + drift-/styr-VESC måste vara OK innan Aktivera går att
@@ -553,46 +684,24 @@ impl App {
         }
         None
     }
+}
 
-    fn status_text(&self) -> String {
-        let status = self.net.fresh_status();
-        let speed = status
-            .and_then(|s| s.speed_kmh)
-            .map(|v| format!("{v:.1} km/h"))
-            .unwrap_or_else(|| "–".to_string());
-        let battery = match (status.and_then(|s| s.battery_voltage), status.and_then(|s| s.battery_percent)) {
-            (Some(v), Some(p)) => format!("{v:.1} V ({p:.0}%)"),
-            (Some(v), None) => format!("{v:.1} V"),
-            (None, Some(p)) => format!("{p:.0}%"),
-            (None, None) => "–".to_string(),
-        };
-        let vesc = match status {
-            Some(s) if !s.vescs_expected.is_empty() => {
-                let ok = s.vescs_expected.iter().filter(|id| s.vescs_responding.contains(id)).count();
-                format!("{ok}/{} svarar", s.vescs_expected.len())
-            }
-            Some(s) => format!("{} svarar", s.vescs_responding.len()),
-            None => "–".to_string(),
-        };
-        let temp = status
-            .and_then(|s| s.vesc_temps_c.iter().copied().reduce(f32::max))
-            .map(|t| format!("{t:.0} °C"))
-            .unwrap_or_else(|| "–".to_string());
-        let ping = self
-            .net
-            .last_ping_ms
-            .map(|v| format!("{v} ms"))
-            .unwrap_or_else(|| "–".to_string());
-        // Två korta rader i stället för en hög kolumn, så rutan skymmer mindre av bilden.
-        let mut text = format!(
-            "Hastighet: {speed}   Batteri: {battery}   VESC: {vesc}   Temp: {temp}\nPing: {ping}   Video: {}",
-            self.video.status_line()
-        );
-        if let Some(err) = status.and_then(|s| s.last_error.as_ref()) {
-            text.push_str(&format!("\n⚠ {err}"));
-        }
-        text
-    }
+/// Mappen där hämtade körloggar sparas: Hämtningar/Robotstyrning-körloggar.
+fn drive_log_dir() -> Option<std::path::PathBuf> {
+    let base = directories::UserDirs::new()
+        .and_then(|u| u.download_dir().map(|d| d.to_path_buf()))
+        .or_else(|| directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf()))?;
+    Some(base.join("Robotstyrning-körloggar"))
+}
+
+fn save_drive_log(name: &str, csv: &str) -> Result<std::path::PathBuf, String> {
+    // Namnet kommer från roboten: bara filnamnet, aldrig en sökväg.
+    let file = std::path::Path::new(name).file_name().ok_or("ogiltigt namn")?;
+    let dir = drive_log_dir().ok_or("hittar ingen Hämtningar-mapp")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(file);
+    std::fs::write(&path, csv).map_err(|e| e.to_string())?;
+    Ok(path)
 }
 
 fn max_output_path() -> Option<std::path::PathBuf> {

@@ -37,6 +37,7 @@ use tokio::sync::Mutex;
 struct AppState {
     driver_connected: Arc<Mutex<bool>>,
     latest_throttle: Arc<Mutex<f32>>,
+    latest_steering: Arc<Mutex<f32>>,
 }
 
 #[tokio::main]
@@ -127,6 +128,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 speed_kmh += (target_speed - speed_kmh) * 0.3;
                 battery_percent = (battery_percent - 0.01).max(0.0);
 
+                let steering = *state.latest_steering.lock().await;
                 let status = StatusUpdate {
                     speed_kmh: Some(speed_kmh.abs()),
                     battery_percent: Some(battery_percent),
@@ -137,6 +139,19 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     battery_voltage: Some(42.0 + 12.4 * battery_percent / 100.0),
                     vescs_responding: vec![28, 36, 76],
                     vescs_expected: vec![28, 36, 76],
+                    // Påhittade fordonsdata, för att se instrumentpanelen utan robot.
+                    battery_charging: if speed_kmh.abs() < 0.2 { Some(true) } else { None },
+                    power_w: Some(40.0 + speed_kmh.abs() * 60.0),
+                    wh_per_km: Some(85.0),
+                    range_km: Some(battery_percent / 100.0 * 2400.0 / 85.0),
+                    steering_deg: Some(steering * 25.0),
+                    steering_percent: Some(steering * 100.0),
+                    roll_deg: Some(2.5),
+                    pitch_deg: Some(-1.0),
+                    yaw_deg: Some(123.0),
+                    fault_text: (battery_percent < 15.0).then(|| "Underspänning – batteriet är nästan tomt".to_string()),
+                    rssi_dbm: Some(-71),
+                    signal_info: Some("4G Telia · RSRP −95 dBm · SINR 12 dB".to_string()),
                 };
                 if send(&mut ws_tx, &RobotMessage::Status(status)).await.is_err() {
                     break;
@@ -155,6 +170,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         match serde_json::from_str::<ClientMessage>(&text) {
                             Ok(ClientMessage::Control(cmd)) if is_driver => {
                                 *state.latest_throttle.lock().await = cmd.throttle;
+                                *state.latest_steering.lock().await = cmd.steering;
                                 if cmd.lights != lights_on {
                                     lights_on = cmd.lights;
                                     println!("Belysning: {}", if lights_on { "PÅ" } else { "AV" });
@@ -177,6 +193,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             }
                             Ok(ClientMessage::Ping { sent_ms }) => {
                                 let _ = send(&mut ws_tx, &RobotMessage::Pong { sent_ms }).await;
+                            }
+                            Ok(ClientMessage::ListDriveLogs) => {
+                                let logs = vec![
+                                    relay_protocol::DriveLogInfo { name: "2026-10-05_14-03-22.csv".into(), bytes: 182_400 },
+                                    relay_protocol::DriveLogInfo { name: "2026-10-04_09-31-07.csv".into(), bytes: 1_204_331 },
+                                ];
+                                let _ = send(&mut ws_tx, &RobotMessage::DriveLogs(logs)).await;
+                            }
+                            Ok(ClientMessage::GetDriveLog { name }) => {
+                                let csv = "tid;fart_kmh\n2026-10-05 14:03:22;3.2\n".to_string();
+                                let _ = send(&mut ws_tx, &RobotMessage::DriveLog { name, csv }).await;
                             }
                             Ok(ClientMessage::ReadActuators) => {
                                 println!("Läser aktuatorer (påhittade, som RobAnt).");

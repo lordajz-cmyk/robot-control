@@ -67,6 +67,50 @@ pub struct RobotConfig {
     pub video: VideoConfig,
     /// Hur spakvärdena skickas till styrkortet, se `DriveConfig`.
     pub drive: DriveConfig,
+    /// Fordonsdata till klienten: batteri, styrvinkel, router, körlogg.
+    pub vehicle: VehicleConfig,
+}
+
+/// Fordonsdata som visas i Robotstyrning (2026-10-05, kundens önskemål).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VehicleConfig {
+    /// Batteriets spänning när det är tomt respektive fulladdat (vila, ingen last).
+    /// Procenten räknas linjärt mellan dem. Standard: 4×12 V litium i serie.
+    pub battery_empty_v: f32,
+    pub battery_full_v: f32,
+    /// Batteriets användbara energi (Wh). Krävs för räckvidden; `None` = ingen räckvidd.
+    pub battery_capacity_wh: Option<f32>,
+    /// Största styrvinkel åt varje håll (grader), för styrningen i procent.
+    pub steering_max_deg: f32,
+    /// Läs styrvinkeln från vinkelgivaren (terminalkommandot `vinkel`, RobAnt-firmware).
+    pub steering_sensor: bool,
+    /// Robotens Teltonika-router (RutOS 7, REST över HTTPS) för mobilnätets signal.
+    /// `router_url` tom = ingen signalstyrka.
+    pub router_url: String,
+    pub router_user: String,
+    pub router_password: String,
+    /// Mapp för körloggar (en CSV per körning). Tom = ingen körlogg.
+    pub drive_log_dir: String,
+    /// Körloggar äldre än så tas bort (dagar).
+    pub drive_log_keep_days: u32,
+}
+
+impl Default for VehicleConfig {
+    fn default() -> Self {
+        Self {
+            battery_empty_v: 42.0,
+            battery_full_v: 54.4,
+            battery_capacity_wh: None,
+            steering_max_deg: 25.0,
+            steering_sensor: true,
+            router_url: "https://192.168.60.1".to_string(),
+            router_user: "admin".to_string(),
+            router_password: String::new(),
+            drive_log_dir: "/var/lib/robotd/korloggar".to_string(),
+            drive_log_keep_days: 90,
+        }
+    }
 }
 
 /// Körning via styrkortet (`CMD_RC_CONTROL_ADV`). Kortet väljer självt vilka
@@ -165,6 +209,7 @@ impl Default for RobotConfig {
             usb_device_path: "/dev/vehicle".to_string(),
             video: VideoConfig::default(),
             drive: DriveConfig::default(),
+            vehicle: VehicleConfig::default(),
         }
     }
 }

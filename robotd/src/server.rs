@@ -58,6 +58,8 @@ pub enum RobotRequest {
     SaveVescProfile { profile: relay_protocol::VescProfileMsg, respond_to: mpsc::Sender<RobotMessage> },
     ReadActuators { respond_to: mpsc::Sender<RobotMessage> },
     WriteActuators { config: relay_protocol::ActuatorConfig, respond_to: mpsc::Sender<RobotMessage> },
+    ListDriveLogs { respond_to: mpsc::Sender<RobotMessage> },
+    GetDriveLog { name: String, respond_to: mpsc::Sender<RobotMessage> },
 }
 
 pub struct ServerHandles {
@@ -286,6 +288,17 @@ async fn handle_socket(
                                     "bara föraren kan skriva till styrkortet".to_string(),
                                 )).await;
                             }
+                            Ok(ClientMessage::ListDriveLogs) => {
+                                let _ = state.request_tx.send(RobotRequest::ListDriveLogs {
+                                    respond_to: out_tx.clone(),
+                                }).await;
+                            }
+                            Ok(ClientMessage::GetDriveLog { name }) => {
+                                let _ = state.request_tx.send(RobotRequest::GetDriveLog {
+                                    name,
+                                    respond_to: out_tx.clone(),
+                                }).await;
+                            }
                             Ok(ClientMessage::Ping { sent_ms }) => {
                                 let _ = out_tx.send(RobotMessage::Pong { sent_ms }).await;
                             }
@@ -393,6 +406,7 @@ mod tests {
             battery_voltage: Some(52.6),
             vescs_responding: vec![28, 36, 76],
             vescs_expected: vec![28, 36, 76],
+            ..Default::default()
         };
         handles.status_broadcast.send(status).await.unwrap();
         let got = tokio::time::timeout(Duration::from_secs(2), async {

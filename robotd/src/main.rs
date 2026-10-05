@@ -3,11 +3,14 @@ mod can_iface;
 mod car_client_link;
 mod config;
 mod display;
+mod drive_log;
 mod gpio_lighting;
 mod ramp;
+mod router;
 mod serial_bridge;
 mod server;
 mod video;
+mod vehicle;
 mod vesc_can;
 mod watchdog;
 
@@ -45,6 +48,7 @@ async fn main() {
                 car_id: cfg.car_client_id,
                 speed_activity: cfg.drive.speed_activity,
                 steering_activity: cfg.drive.steering_activity,
+                steering_sensor: cfg.vehicle.steering_sensor,
             },
             server.clients_connected.clone(),
         )),
@@ -115,6 +119,22 @@ async fn main() {
     let mut client_max: Option<f32> = None;
     // Status till klienterna två gånger per sekund.
     let mut status_tick = tokio::time::interval(Duration::from_millis(500));
+    // Fordonsdata (batteri, laddning, räckvidd), mobilnätets signal och körlogg.
+    let mut vehicle_tracker = vehicle::VehicleTracker::new(
+        cfg.vehicle.battery_empty_v,
+        cfg.vehicle.battery_full_v,
+        cfg.vehicle.battery_capacity_wh,
+    );
+    let router_signal = router::spawn(
+        cfg.vehicle.router_url.clone(),
+        cfg.vehicle.router_user.clone(),
+        cfg.vehicle.router_password.clone(),
+    );
+    if router_signal.is_none() {
+        tracing::info!("Ingen routerinloggning i config (vehicle.router_password) — ingen signalstyrka.");
+    }
+    let mut drive_log = drive_log::DriveLog::new(&cfg.vehicle.drive_log_dir, cfg.vehicle.drive_log_keep_days);
+    let mut status_count: u64 = 0;
 
     loop {
         tokio::select! {
@@ -174,7 +194,35 @@ async fn main() {
             }
             _ = status_tick.tick() => {
                 if let Some(l) = &link {
-                    let status = build_status(&l.status.borrow(), &l.telemetry.borrow(), &cfg.known_vesc_ids);
+                    let telemetry = l.telemetry.borrow().clone();
+                    let figures = telemetry.board.map(|b| {
+                        let power = vehicle::power_from_vescs(&telemetry.vescs, b.v_in);
+                        vehicle_tracker.update(Instant::now(), b.v_in, b.speed_ms, power)
+                    });
+                    let signal = router_signal.as_ref().and_then(|r| r.borrow().clone());
+                    let status = build_status(
+                        &l.status.borrow(),
+                        &telemetry,
+                        &cfg.known_vesc_ids,
+                        figures,
+                        signal,
+                        cfg.vehicle.steering_max_deg,
+                    );
+
+                    // Körlogg: en fil per körning (medan länken till styrkortet är uppe,
+                    // dvs. medan någon är ansluten), en rad per sekund.
+                    let connected = l.status.borrow().connected;
+                    if connected && !drive_log.is_open() {
+                        drive_log.start();
+                    } else if !connected && drive_log.is_open() {
+                        drive_log.stop();
+                    }
+                    status_count += 1;
+                    if drive_log.is_open() && status_count % 2 == 0 {
+                        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                        drive_log.write(&drive_log::row(&now, last_activated, target_throttle, target_steering, &status));
+                    }
+
                     // Aldrig vänta på nätverket här — hellre tappa en status.
                     let _ = server.status_broadcast.try_send(status);
                 }
@@ -271,6 +319,29 @@ async fn main() {
                             });
                         }
                     }
+                    RobotRequest::ListDriveLogs { respond_to } => {
+                        let dir = std::path::PathBuf::from(&cfg.vehicle.drive_log_dir);
+                        tokio::spawn(async move {
+                            let r = tokio::task::spawn_blocking(move || drive_log::list(&dir)).await
+                                .unwrap_or_else(|e| Err(e.to_string()));
+                            let _ = respond_to.send(match r {
+                                Ok(l) => RobotMessage::DriveLogs(l),
+                                Err(e) => RobotMessage::DriveLogError(e),
+                            }).await;
+                        });
+                    }
+                    RobotRequest::GetDriveLog { name, respond_to } => {
+                        let dir = std::path::PathBuf::from(&cfg.vehicle.drive_log_dir);
+                        tokio::spawn(async move {
+                            let n = name.clone();
+                            let r = tokio::task::spawn_blocking(move || drive_log::read(&dir, &n)).await
+                                .unwrap_or_else(|e| Err(e.to_string()));
+                            let _ = respond_to.send(match r {
+                                Ok(csv) => RobotMessage::DriveLog { name, csv },
+                                Err(e) => RobotMessage::DriveLogError(e),
+                            }).await;
+                        });
+                    }
                     RobotRequest::SaveVescProfile { profile, respond_to } => {
                         let mut new_cfg = cfg.clone();
                         new_cfg.vesc_profile.roller = profile.roller.into_iter()
@@ -350,24 +421,44 @@ fn drive_setpoint(
 /// Ingen ping, ingen extern förfrågan — bara att gränssnittet självt
 /// rapporterar "up" i kärnan. Räcker för "syns roboten på VPN:et alls",
 /// inte en fullständig internetkontroll.
-/// StatusUpdate till klienterna från länkens läge och styrkortets telemetri.
+/// StatusUpdate till klienterna från länkens läge, styrkortets telemetri,
+/// fordonsberäkningarna och routerns signal.
 fn build_status(
     link: &car_client_link::LinkStatus,
     t: &car_client_link::Telemetry,
     expected: &[u8],
+    figures: Option<vehicle::VehicleFigures>,
+    signal: Option<router::RouterSignal>,
+    steering_max_deg: f32,
 ) -> StatusUpdate {
     let board = t.board;
-    let fault = board.filter(|b| b.fault_code != 0).map(|b| format!("VESC-fel, kod {}", b.fault_code));
+    let fault_text = board.and_then(|b| vesc_can::fault_text(b.fault_code));
+    // Vinkelgivaren räknas bara när den själv säger OK.
+    let steering = t.steering.filter(|(_, ok)| *ok).map(|(deg, _)| deg);
     StatusUpdate {
         speed_kmh: board.map(|b| b.speed_ms.abs() * 3.6),
-        battery_percent: board.map(|b| vesc_can::estimate_battery_percent(b.v_in)),
+        battery_percent: figures.map(|f| f.percent),
         gps_fix: false,
         vesc_temps_c: board.map(|b| vec![b.temp_mos]).unwrap_or_default(),
-        last_error: link.error.clone().or(fault),
+        last_error: link.error.clone().or(fault_text.clone()),
         link_quality: relay_protocol::LinkQuality::Green,
         battery_voltage: board.map(|b| b.v_in),
         vescs_responding: t.vescs.iter().filter(|e| e.is_fresh()).map(|e| e.can_id).collect(),
         vescs_expected: expected.to_vec(),
+        battery_charging: figures.and_then(|f| f.charging),
+        power_w: figures.map(|f| f.power_w),
+        wh_per_km: figures.and_then(|f| f.wh_per_km),
+        range_km: figures.and_then(|f| f.range_km),
+        steering_deg: steering,
+        steering_percent: steering
+            .filter(|_| steering_max_deg > 0.0)
+            .map(|d| (d / steering_max_deg * 100.0).clamp(-100.0, 100.0)),
+        roll_deg: board.map(|b| b.roll_deg),
+        pitch_deg: board.map(|b| b.pitch_deg),
+        yaw_deg: board.map(|b| b.yaw_deg),
+        fault_text,
+        rssi_dbm: signal.as_ref().and_then(|s| s.rssi_dbm),
+        signal_info: signal.and_then(|s| s.info),
     }
 }
 
@@ -387,6 +478,31 @@ fn check_usb(device_path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_med_fordonsdata() {
+        let board = vesc_can::BoardState {
+            roll_deg: 4.0, pitch_deg: -1.5, yaw_deg: 210.0,
+            speed_ms: -1.0, v_in: 48.2, temp_mos: 35.0, fault_code: 2,
+        };
+        let t = car_client_link::Telemetry { board: Some(board), vescs: vec![], steering: Some((-12.5, true)) };
+        let fig = vehicle::VehicleFigures { percent: 50.0, charging: Some(true), power_w: 120.0, wh_per_km: Some(90.0), range_km: Some(13.3) };
+        let sig = router::RouterSignal { rssi_dbm: Some(-71), info: Some("4G Telia".into()) };
+        let s = build_status(&car_client_link::LinkStatus::default(), &t, &[90, 87], Some(fig), Some(sig), 25.0);
+        assert!((s.speed_kmh.unwrap() - 3.6).abs() < 1e-4); // backning visas som positiv fart
+        assert_eq!(s.steering_percent, Some(-50.0));
+        assert_eq!(s.roll_deg, Some(4.0));
+        assert!(s.fault_text.as_deref().unwrap().contains("Underspänning"));
+        assert_eq!(s.last_error, s.fault_text);
+        assert_eq!(s.battery_charging, Some(true));
+        assert_eq!(s.rssi_dbm, Some(-71));
+        // Vinkelgivaren säger FEL: ingen styrvinkel alls.
+        let t = car_client_link::Telemetry { board: Some(board), vescs: vec![], steering: Some((0.0, false)) };
+        let s = build_status(&car_client_link::LinkStatus::default(), &t, &[], None, None, 25.0);
+        assert_eq!(s.steering_deg, None);
+        assert_eq!(s.steering_percent, None);
+        assert_eq!(s.battery_percent, None);
+    }
 
     #[test]
     fn kanda_vesc_som_inte_svarade_markeras_tysta() {

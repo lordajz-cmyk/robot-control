@@ -130,6 +130,8 @@ impl DriveSetpoint {
 pub struct Telemetry {
     pub board: Option<BoardState>,
     pub vescs: Vec<VescStatusEntry>,
+    /// Styrvinkel (grader) och om vinkelgivaren är OK, från terminalkommandot `vinkel`.
+    pub steering: Option<(f32, bool)>,
 }
 
 /// Länkens läge, för loggar, OLED och klientens statusrad.
@@ -187,7 +189,13 @@ pub struct LinkParams {
     pub car_id: u8,
     pub speed_activity: u8,
     pub steering_activity: u8,
+    /// Fråga styrkortet om styrvinkeln (`vinkel`) en gång per sekund.
+    pub steering_sensor: bool,
 }
+
+/// Svarar firmwaren inte på `vinkel` efter så många frågor (saknar vinkelgivare)
+/// slutar vi fråga under den här anslutningen.
+const ANGLE_GIVE_UP: u32 = 10;
 
 /// Ska `sp` skickas nu, givet vad som skickades senast? Övergång till stillastående
 /// skickas direkt, annars styr omsändningstakten.
@@ -331,6 +339,10 @@ async fn session(
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut poll = tokio::time::interval(POLL_INTERVAL);
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Styrvinkeln: varannan poll (1 s). `angle_asked` räknas ner när svar kommer.
+    let mut poll_count: u32 = 0;
+    let mut angle_unanswered: u32 = 0;
+    let mut angle_supported = p.steering_sensor;
 
     loop {
         tokio::select! {
@@ -338,6 +350,16 @@ async fn session(
             _ = poll.tick() => {
                 link.send_raw_payload(&vesc_can::make_state_request(p.car_id)).await?;
                 link.send_raw_payload(&vesc_can::make_vesc_status_request(p.car_id)).await?;
+                poll_count += 1;
+                if angle_supported && poll_count % 2 == 0 {
+                    if angle_unanswered >= ANGLE_GIVE_UP {
+                        angle_supported = false;
+                        tracing::info!("Styrkortet svarar inte på `vinkel` (ingen vinkelgivare?) — slutar fråga.");
+                    } else {
+                        link.send_raw_payload(&vesc_can::make_terminal_cmd(p.car_id, "vinkel")).await?;
+                        angle_unanswered += 1;
+                    }
+                }
             }
             changed = ch.setpoint.changed() => {
                 if changed.is_err() {
@@ -376,6 +398,9 @@ async fn session(
                         ch.telemetry.send_modify(|t| t.vescs = entries);
                     } else if let Some(state) = vesc_can::parse_state_reply(&pkt) {
                         ch.telemetry.send_modify(|t| t.board = Some(state));
+                    } else if let Some(angle) = vesc_can::parse_angle_printf(&pkt) {
+                        angle_unanswered = 0;
+                        ch.telemetry.send_modify(|t| t.steering = Some(angle));
                     }
                 }
             }
@@ -481,7 +506,7 @@ mod tests {
     }
 
     fn params(addr: SocketAddr) -> LinkParams {
-        LinkParams { addr, car_id: 4, speed_activity: 10, steering_activity: 11 }
+        LinkParams { addr, car_id: 4, speed_activity: 10, steering_activity: 11, steering_sensor: false }
     }
 
     #[test]
