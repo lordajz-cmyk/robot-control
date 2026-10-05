@@ -20,7 +20,11 @@ Ubuntu-dator, var du än är. Datorn och roboten pratar över ett eget krypterat
   motorer svarar (och kameran fungerar i CAM-läge). Texten under knappen säger vad som saknas.
 - **Färgad ram runt bilden** visar läget: grön = bra kontakt, gul = dålig kontakt,
   röd = ingen kontakt (roboten stannar), lila = handkontrollen saknas.
-- **Status:** fart, batteri (V och %), hur många motorer som svarar, temperatur, ping.
+- **Instrumentpanel:** batterimätare (procent, spänning, ⚡ laddar), räckvidd och Wh/km,
+  fart, temperatur, hur många motorer som svarar, styrvinkel (V/H i %), lutning och kurs,
+  ping, och robotens fel i klartext (t.ex. underspänning).
+- **Körloggar:** roboten sparar en CSV-fil per körning (en rad per sekund, 90 dagar).
+  Knappen **Loggar** hämtar dem till `Hämtningar/Robotstyrning-körloggar`.
 - **Max-reglage** för hur fort roboten får köra. Värdet sparas till nästa gång.
 - **🔒 Lås** (eller Esc) slår av körningen direkt.
 - **CAM/LOS:** kör på kamerabilden, eller med roboten i sikte om kameran inte fungerar.

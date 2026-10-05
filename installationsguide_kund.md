@@ -217,6 +217,10 @@ RControlStation
    musen över den står det *Connect to selected machine*.
 4. Efter några sekunder visas roboten, och batteri och GPS börjar uppdateras.
 
+Rutan **Status** till vänster visar GPS-lösning, ping och samma fordonsdata som
+Robotstyrning: batteri, räckvidd, fart, temperatur, styrning, lutning, kurs och fel.
+RControlStation sparar också en körlogg per anslutning i `Hämtningar/RControlStation-korloggar`.
+
 **Står inte din robot i listan?** Tryck på knappen **längst till höger** under listan
 (uppdatera). Syns den fortfarande inte: klicka i textrutan under listan, radera det som
 står där, skriv **robotens adress** (till exempel `192.168.200.12`) och tryck på knappen
@@ -240,8 +244,8 @@ sidan = sväng. **Max** (hur fort den får köra) står på `0.42`.
 ### Skärmen
 | Var | Vad |
 |---|---|
-| **Uppe till vänster** | Grön text: fart, batteri, hur många motorer som svarar, temperatur, ping. |
-| **Uppe till höger** | 🔒 Lås · 💡 Belysning · 📷 CAM/LOS · **Max** · ⚙ Inställningar |
+| **Uppe till vänster** | Instrumentpanelen: batteri (procent, spänning, ⚡ laddar), räckvidd, fart, temperatur, motorer som svarar, styrning (V/H), lutning, kurs, ping och fel i klartext. |
+| **Uppe till höger** | 🔒 Lås · 💡 Belysning · 📷 CAM/LOS · **Max** · **Loggar** · ⚙ Inställningar |
 | **Mitten** | Den gröna knappen **AKTIVERA**. |
 | **Ramen runt fönstret** | 🟢 grön = bra kontakt · 🟡 gul = dålig kontakt · 🔴 röd = ingen kontakt (roboten stannar) · 🟣 lila = handkontrollen saknas |
 
@@ -266,6 +270,12 @@ sidan = sväng. **Max** (hur fort den får köra) står på `0.42`.
 - **CAM** betyder att du kör med kameran. **LOS** betyder att du ser roboten med egna ögon.
   I LOS-läget kan du köra även om kameran inte fungerar.
 - **⚙ Inställningar** behöver du normalt inte röra. Där ligger robotens motorinställningar.
+- **Batteriet:** procenten räknas fram ur spänningen när roboten står still och räknas sedan
+  ner med det som förbrukas. Mitt i spannet (20–90 %) är den ungefärlig. **⚡ laddar** visas
+  när roboten stått still en och en halv minut och spänningen stiger (t.ex. när elverket laddar).
+- **Räckvidd** visas när roboten kört cirka 200 m, så att förbrukningen går att räkna fram.
+- **Loggar** (uppe till höger) listar robotens körloggar. **Spara** lägger filen i
+  `Hämtningar/Robotstyrning-körloggar`. Filerna går att öppna i Excel.
 
 ---
 
