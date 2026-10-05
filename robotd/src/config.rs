@@ -75,18 +75,21 @@ pub struct RobotConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VehicleConfig {
-    /// Batteriets spänning när det är tomt respektive fulladdat (vila, ingen last).
-    /// Procenten räknas linjärt mellan dem. Standard: 4×12 V litium i serie.
+    /// "lifepo4": procent ur LiFePO4-cellernas vilospänning (`battery_series_cells`).
+    /// "linear": linjärt mellan `battery_empty_v` och `battery_full_v`.
+    /// Standard: 4 st Pro Supply 12,8 V 80 Ah LiFePO4 i serie = 16 celler, 51,2 V, 4096 Wh.
+    pub battery_type: String,
+    pub battery_series_cells: u32,
     pub battery_empty_v: f32,
     pub battery_full_v: f32,
-    /// Batteriets användbara energi (Wh). Krävs för räckvidden; `None` = ingen räckvidd.
+    /// Batteriets energi (Wh). Krävs för räckvidden; `None` = ingen räckvidd.
     pub battery_capacity_wh: Option<f32>,
     /// Största styrvinkel åt varje håll (grader), för styrningen i procent.
     pub steering_max_deg: f32,
     /// Läs styrvinkeln från vinkelgivaren (terminalkommandot `vinkel`, RobAnt-firmware).
     pub steering_sensor: bool,
     /// Robotens Teltonika-router (RutOS 7, REST över HTTPS) för mobilnätets signal.
-    /// `router_url` tom = ingen signalstyrka.
+    /// `router_url` tom = ingen signalstyrka (standard: av, klienten visar ping).
     pub router_url: String,
     pub router_user: String,
     pub router_password: String,
@@ -99,12 +102,14 @@ pub struct VehicleConfig {
 impl Default for VehicleConfig {
     fn default() -> Self {
         Self {
-            battery_empty_v: 42.0,
+            battery_type: "lifepo4".to_string(),
+            battery_series_cells: 16,
+            battery_empty_v: 48.0,
             battery_full_v: 54.4,
-            battery_capacity_wh: None,
+            battery_capacity_wh: Some(4096.0),
             steering_max_deg: 25.0,
             steering_sensor: true,
-            router_url: "https://192.168.60.1".to_string(),
+            router_url: String::new(),
             router_user: "admin".to_string(),
             router_password: String::new(),
             drive_log_dir: "/var/lib/robotd/korloggar".to_string(),

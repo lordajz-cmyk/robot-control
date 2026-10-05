@@ -120,11 +120,8 @@ async fn main() {
     // Status till klienterna två gånger per sekund.
     let mut status_tick = tokio::time::interval(Duration::from_millis(500));
     // Fordonsdata (batteri, laddning, räckvidd), mobilnätets signal och körlogg.
-    let mut vehicle_tracker = vehicle::VehicleTracker::new(
-        cfg.vehicle.battery_empty_v,
-        cfg.vehicle.battery_full_v,
-        cfg.vehicle.battery_capacity_wh,
-    );
+    let mut vehicle_tracker =
+        vehicle::VehicleTracker::new(vehicle::BatteryModel::from_config(&cfg.vehicle), cfg.vehicle.battery_capacity_wh);
     let router_signal = router::spawn(
         cfg.vehicle.router_url.clone(),
         cfg.vehicle.router_user.clone(),
