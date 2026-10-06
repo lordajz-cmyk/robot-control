@@ -129,10 +129,12 @@ void terminal_process_string(char *str) {
 		comm_can_set_dw_uptime_func(dw_uptime_callback);
 		comm_can_dw_get_uptime(CAN_DW_ID_ANY);
 	} else if (strcmp(argv[0], "zero_gyro") == 0) {
-#if !HAS_BMI160
+#if !HAS_BMI160 && !HAS_BMI270
 		led_write(LED_RED, 1);
 		mpu9150_sample_gyro_offsets(100);
 		led_write(LED_RED, 0);
+#elif HAS_BMI270
+		commands_printf("TODO: Implement for BMI270\n");
 #else
 		commands_printf("TODO: Implement for BMI160\n");
 #endif

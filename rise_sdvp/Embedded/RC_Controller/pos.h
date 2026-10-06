@@ -36,6 +36,9 @@ void pos_set_enu_ref(double lat, double lon, double height);
 void pos_get_enu_ref(double *llh);
 void pos_reset_enu_ref(void);
 void pos_get_mc_val(mc_values *v);
+#ifdef IS_ROVMCU
+void pos_start_imu(void);
+#endif
 int32_t pos_get_ms_today(void);
 void pos_set_ms_today(int32_t ms);
 bool pos_input_nmea(const char *data);

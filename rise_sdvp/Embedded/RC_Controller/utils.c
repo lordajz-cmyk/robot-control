@@ -702,7 +702,7 @@ void utils_closest_point_line(const ROUTE_POINT *point1, const ROUTE_POINT *poin
 	const float ap_ab = d1x * dx + d1y * dy;
 	float t;
 	if (ab2 <= 1e-6f) {
-		t = 0.0f;
+		t = 0.0f;	// två ruttpunkter på samma ställe: undvik division med noll
 	} else {
 		t = ap_ab / ab2;
 	}

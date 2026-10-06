@@ -45,9 +45,14 @@
 #define TACHO_INPUT_PORT      GPIOA
 ADC_CNT_t io_board_adc0_cnt = {1};
 systime_t last_reading_time = 0;
+#ifndef IS_ROVMCU
 static volatile uint32_t timer_overflow_count = 0; // antal overflow
+#endif
 static volatile uint32_t last_capture = 0;         // 32-bitars senaste capture
 static systime_t last_tick = 0;
+#ifdef IS_ROVMCU
+static bool capture_started = false;
+#endif
 //extern float time_last;
 
 
@@ -67,7 +72,13 @@ static ADCConversionGroup adcgrpcfg;
 
 // Settings
 #define ESC_UPDATE_RATE			200	// Hz
+#ifdef IS_ROVMCU
+// 1 MHz divides both APB timer clocks exactly (84/168 MHz) and gives 1 us
+// pulse resolution. Legacy's 5 MHz does not and truncates the prescaler.
+#define TIM_CLOCK               1000000U
+#else
 #define TIM_CLOCK				5e6 // Hz
+#endif
 #define ALL_CHANNELS			0xFF
 
 // Pins
@@ -119,7 +130,11 @@ static PWMConfig pwmcfg9 = {
 		NULL,
 		{
 				{PWM_OUTPUT_ACTIVE_HIGH, NULL},
+#ifdef IS_ROVMCU
+				{PWM_OUTPUT_DISABLED, NULL}, // PA3 belongs to TIM2_CH4 wheel input
+#else
 				{PWM_OUTPUT_ACTIVE_HIGH, NULL},
+#endif
 				{PWM_OUTPUT_DISABLED, NULL},
 				{PWM_OUTPUT_DISABLED, NULL}
 		},
@@ -147,7 +162,8 @@ void pwm_esc_init(void) {
 			PAL_MODE_ALTERNATE(GPIO_AF_TIM9) |
 			PAL_STM32_OTYPE_PUSHPULL |
 			PAL_STM32_OSPEED_MID1);
-#ifndef ANGLE_SENSOR_PA3	// PA3 är då analog ingång för vinkelgivaren (adconv.c)
+// PA3 är hjulpulsingång på MP101 och analog ingång för vinkelgivaren (adconv.c) med ANGLE_SENSOR_PA3.
+#if !defined(IS_ROVMCU) && !defined(ANGLE_SENSOR_PA3)
 	palSetPadMode(SERVO4_GPIO, SERVO4_PIN,
 			PAL_MODE_ALTERNATE(GPIO_AF_TIM9) |
 			PAL_STM32_OTYPE_PUSHPULL |
@@ -156,7 +172,8 @@ void pwm_esc_init(void) {
 
 	pwm_esc_set_all(0);
 #endif
-#ifdef SERVO_READ
+#if defined(SERVO_READ) && !defined(IS_ROVMCU)
+	// MP101 wheel capture is initialized once by main.c, independently of PWM.
 	tach_input_init();
 #endif
 #ifdef PWMTEST
@@ -218,14 +235,18 @@ void pwm_esc_set(uint8_t channel, float pulse_width) {
 		break;
 
 	case 3:
+#ifndef IS_ROVMCU
 		pwmEnableChannel(&PWMD9, 1, cnt_val);
+#endif
 		break;
 
 	case ALL_CHANNELS:
 		pwmEnableChannel(&PWMD3, 2, cnt_val);
 		pwmEnableChannel(&PWMD3, 3, cnt_val);
 		pwmEnableChannel(&PWMD9, 0, cnt_val);
+#ifndef IS_ROVMCU
 		pwmEnableChannel(&PWMD9, 1, cnt_val);
+#endif
 		break;
 
 	default:
@@ -238,7 +259,24 @@ void tach_input_init(void) {
     // Enable TIM2 clock
     rccEnableTIM2(TRUE);
 
-    // Configure PA2 as TIM2_CH3 (AF1)
+#ifdef IS_ROVMCU
+    // PA3, TIM2_CH4 (AF1), via U40 with DIR PD7 low. External R127 supplies
+    // the pull-up. TIM2's full 32-bit counter avoids lost 16-bit overflows.
+    palSetPadMode(TACHO_INPUT_PORT, 3, PAL_MODE_ALTERNATE(1));
+    TIM2->CR1 = 0;
+    TIM2->DIER = 0;
+    TIM2->PSC = STM32_TIMCLK1 / 100000U - 1U; // 10 us, same units as legacy
+    TIM2->ARR = 0xFFFFFFFFU;
+    TIM2->CCMR2 = TIM_CCMR2_CC4S_0;
+    TIM2->CCER = TIM_CCER_CC4E; // rising edges
+    TIM2->EGR = TIM_EGR_UG;
+    TIM2->CNT = 0;
+    TIM2->SR = 0;
+    TIM2->DIER = TIM_DIER_CC4IE;
+    TIM2->CR1 = TIM_CR1_CEN;
+    capture_started = false;
+#else
+    // Configure PA2 as TIM2_CH3 (AF1), unchanged on legacy boards.
 #ifdef WHEELSPEED_PULLUP
     palSetPadMode(TACHO_INPUT_PORT, 2, PAL_MODE_ALTERNATE(1) | PAL_STM32_PUDR_PULLUP);
 #else
@@ -259,6 +297,7 @@ void tach_input_init(void) {
     // Enable interrupt on CC3 match
     TIM2->DIER |= TIM_DIER_CC3IE;
     TIM2->CR1 |= TIM_CR1_CEN;         // Start the timer
+#endif
 
     // Enable TIM2 IRQ in NVIC
     nvicEnableVector(STM32_TIM2_NUMBER, CORTEX_PRIORITY_MASK(7));
@@ -282,6 +321,21 @@ void tach_input_init(void) {
 
 CH_IRQ_HANDLER(STM32_TIM2_HANDLER) {
     CH_IRQ_PROLOGUE();
+#ifdef IS_ROVMCU
+    if (TIM2->SR & TIM_SR_CC4IF) {
+        uint32_t capture = TIM2->CCR4;
+        uint32_t delta = capture - last_capture;
+        last_capture = capture;
+        last_reading_time = chVTGetSystemTimeX();
+        // Ignore the first edge: it has no preceding pulse to measure against.
+        if (capture_started) {
+            update_speed_buffer(0.00001f * delta, 0.0f);
+            new_pulse = true;
+        }
+        capture_started = true;
+        TIM2->SR &= ~TIM_SR_CC4IF;
+    }
+#else
     if (TIM2->SR & TIM_SR_UIF) {
         TIM2->SR &= ~TIM_SR_UIF; // rensa flagga
         timer_overflow_count++;
@@ -308,6 +362,7 @@ CH_IRQ_HANDLER(STM32_TIM2_HANDLER) {
 
         TIM2->SR &= ~TIM_SR_CC3IF;
     }
+#endif
 
     CH_IRQ_EPILOGUE();
 }

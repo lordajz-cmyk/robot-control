@@ -3,10 +3,21 @@
 # NOTE: Can be overridden externally.
 #
 
+# All boards share build/. Run make clean before changing board or profile.
+# Example: make clean && make -j4 robant BOARD=mp101
+BOARD ?= legacy
+ifeq ($(BOARD),mp101)
+  MCU_DEFS = -DSTM32F415xx -DIS_ROVMCU
+else ifeq ($(BOARD),legacy)
+  MCU_DEFS = -DSTM32F405xx
+else
+  $(error BOARD must be legacy or mp101)
+endif
+
 # Compiler options here.
 ifeq ($(USE_OPT),)
   USE_OPT = -O2 -ggdb -fomit-frame-pointer -falign-functions=16 -std=gnu99
-  USE_OPT += -DBOARD_OTG_NOVBUSSENS -DSTM32F405xx $(build_args)
+  USE_OPT += -DBOARD_OTG_NOVBUSSENS $(MCU_DEFS) $(build_args)
   USE_OPT += -fsingle-precision-constant -Wdouble-promotion
   USE_OPT += --specs=nosys.specs
 endif
@@ -109,7 +120,11 @@ include $(CHIBIOS)/os/common/ports/ARMCMx/compilers/GCC/mk/startup_stm32f4xx.mk
 # HAL-OSAL files (optional).
 include $(CHIBIOS)/os/hal/hal.mk
 include $(CHIBIOS)/os/hal/ports/STM32/STM32F4xx/platform.mk
+ifeq ($(BOARD),mp101)
+include boards/MP101_323/board.mk
+else
 include $(CHIBIOS)/os/hal/boards/ST_STM32F4_DISCOVERY/board.mk
+endif
 include $(CHIBIOS)/os/hal/osal/rt/osal.mk
 # RTOS files (optional).
 include $(CHIBIOS)/os/rt/rt.mk
@@ -331,15 +346,21 @@ rise_f9: USE_OPT += -DMAIN_MODE=MAIN_MODE_vehicle -DIS_F9_BOARD=1
 rise_f9: touch_conf_general build/fw_rise_f9.elf build/fw_rise_f9.bin
 
 drangen: override PROJECT = fw_drangen
-drangen: USE_OPT += -DMAIN_MODE=MAIN_MODE_vehicle -DUBLOX_EN=1 -DBOARD_YAW_ROT=180.0 -DHAS_HYDRAULIC_DRIVE=0 -DSERVO_VESC_ID=36
+drangen: BOARD_YAW_ROT ?= 180.0
+drangen: USE_OPT += -DMAIN_MODE=MAIN_MODE_vehicle -DUBLOX_EN=1 -DBOARD_YAW_ROT=$(BOARD_YAW_ROT) -DHAS_HYDRAULIC_DRIVE=0 -DSERVO_VESC_ID=36
 drangen: touch_conf_general build/fw_drangen.elf build/fw_drangen.bin
 
 mactrac: override PROJECT = fw_mactrac
 mactrac: USE_OPT += -DMAIN_MODE=MAIN_MODE_vehicle -DIS_MACTRAC
 mactrac: touch_conf_general build/fw_mactrac.elf build/fw_mactrac.bin
+ifeq ($(BOARD),mp101)
+mactrac: BOARD_YAW_ROT ?= -90.0
+mactrac: USE_OPT += -DBOARD_YAW_ROT=$(BOARD_YAW_ROT)
+endif
 
 robant: override PROJECT = fw_robant
-robant: USE_OPT += -DMAIN_MODE=MAIN_MODE_vehicle -DUBLOX_EN=1 -DBOARD_YAW_ROT=180.0 -DHAS_HYDRAULIC_DRIVE=0 -DIS_ROBANT
+robant: BOARD_YAW_ROT ?= 180.0
+robant: USE_OPT += -DMAIN_MODE=MAIN_MODE_vehicle -DUBLOX_EN=1 -DBOARD_YAW_ROT=$(BOARD_YAW_ROT) -DHAS_HYDRAULIC_DRIVE=0 -DIS_ROBANT
 robant: touch_conf_general build/fw_robant.elf build/fw_robant.bin
 
 RULESPATH = $(CHIBIOS)/os/common/ports/ARMCMx/compilers/GCC

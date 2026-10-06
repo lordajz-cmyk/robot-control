@@ -26,7 +26,7 @@
 #include <string.h>
 #include <math.h>
 
-#if !HAS_BMI160
+#if !HAS_BMI160 && !HAS_BMI270
 
 // Settings
 #define USE_MAGNETOMETER		1
@@ -537,4 +537,3 @@ static void delay_short(void) {
 }
 
 #endif
-

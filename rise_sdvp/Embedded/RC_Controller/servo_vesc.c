@@ -65,6 +65,12 @@ static THD_WORKING_AREA(servo_thread_wa, 1024);
 static THD_FUNCTION(servo_thread, arg);
 
 void servo_vesc_init(void) {
+#if defined(IS_ROVMCU) && !defined(SERVO_VESC_HYDRAULIC)
+#error "MP101 has no AS5047 SPI connection; select the existing external-angle mode"
+#endif
+#ifndef IS_ROVMCU
+	// Preserve legacy startup. MP101 uses external steering feedback and these
+	// old encoder pins instead belong to LEDs and UART5.
 	palSetPadMode(SPI_SW_MISO_GPIO, SPI_SW_MISO_PIN, PAL_MODE_INPUT);
 	palSetPadMode(SPI_SW_SCK_GPIO, SPI_SW_SCK_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
 	palSetPadMode(SPI_SW_CS_GPIO, SPI_SW_CS_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
@@ -72,6 +78,7 @@ void servo_vesc_init(void) {
 	// Set MOSI to 1
 	palSetPadMode(SPI_SW_MOSI_GPIO, SPI_SW_MOSI_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
 	palSetPad(SPI_SW_MOSI_GPIO, SPI_SW_MOSI_PIN);
+#endif
 
 	chThdCreateStatic(servo_thread_wa, sizeof(servo_thread_wa), NORMALPRIO, servo_thread, NULL);
 

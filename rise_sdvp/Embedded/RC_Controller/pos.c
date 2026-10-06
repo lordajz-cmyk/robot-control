@@ -39,6 +39,7 @@
 #include "hydraulic.h"
 #include "pos.h"
 #include "bmi160_wrapper.h"
+#include "bmi270_wrapper.h"
 
 // Defines
 #define ITERATION_TIMER_FREQ			50000
@@ -141,7 +142,9 @@ void pos_init(void) {
 	chMtxObjectInit(&m_mutex_pos);
 	chMtxObjectInit(&m_mutex_gps);
 
-#if HAS_BMI160
+#if HAS_BMI270
+	// MP101 sampling starts after all application drivers have initialized.
+#elif HAS_BMI160
 	commands_printf("Has BMI 160\n");
 	bmi160_wrapper_init(500);
 	bmi160_wrapper_set_read_callback(mpu9150_read);
@@ -859,6 +862,15 @@ void broadcastisInititated(void) {
 }
 
 
+#if HAS_BMI270
+void pos_start_imu(void) {
+	// The callback polls CAN and uses TIM6: main starts it only after those
+	// drivers, USB, configuration and position state are ready.
+	bmi270_wrapper_set_read_callback(mpu9150_read);
+	bmi270_wrapper_init(500);
+}
+#endif
+
 static void mpu9150_read(float *accel, float *gyro, float *mag) {
 	static unsigned int cnt_last = 0;
 	volatile unsigned int cnt = TIM6->CNT;
@@ -1005,7 +1017,7 @@ static void update_orientation_angles(float *accel, float *gyro, float *mag, flo
 	// Rotate board yaw orientation
 	float rotf = 0.0;
 
-#if !HAS_BMI160
+#if !HAS_BMI160 && !HAS_BMI270
 	// The MPU9250 footprint is rotated 180 degrees compared to the one
 	// for the MPU9150 on our PCB. Make sure that the code behaves the
 	// same regardless which one is used.

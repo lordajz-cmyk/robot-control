@@ -20,12 +20,21 @@
 #include "conf_general.h"
 #include "terminal.h"
 #include "commands.h"
+#ifdef IS_ROVMCU
+#include "pos.h"
+#endif
 #include "comm_can.h"
 
 // Settings
 #define VREFINT					1.21
 
+#ifdef IS_ROVMCU
+#define ADC_GRP_NUM_CHANNELS    6
+#define ADC_VREF_INDEX          4
+#else
 #define ADC_GRP_NUM_CHANNELS	8
+#define ADC_VREF_INDEX          6
+#endif
 #define ADC_GRP_BUF_DEPTH		1
 
 static adcsample_t samples[ADC_GRP_NUM_CHANNELS * ADC_GRP_BUF_DEPTH];
@@ -49,8 +58,16 @@ static void adccallback(ADCDriver *adcp, adcsample_t *buffer, size_t n) {
 	(void)buffer;
 	(void)n;
 
-	const float v_reg = (VREFINT * 4095.0) / (float)samples[6];
+#ifdef IS_ROVMCU
+	if (samples[ADC_VREF_INDEX] == 0) {
+		return;
+	}
+	const float v_reg = (VREFINT * 4095.0) / (float)samples[ADC_VREF_INDEX];
+	float sample = (samples[0] / 4095.0 * v_reg) * ((PWR_5V_R1 + PWR_5V_R2) / PWR_5V_R2);
+#else
+	const float v_reg = (VREFINT * 4095.0) / (float)samples[ADC_VREF_INDEX];
 	float sample = (samples[0] / 4095.0 * v_reg) * ((VIN_R1 + VIN_R2) / VIN_R2);
+#endif
 	UTILS_LP_FAST(vin_filter, sample, 0.02);
 
 #ifdef ANGLE_SENSOR_PA3
@@ -76,6 +93,19 @@ static const ADCConversionGroup adcgrpcfg = {
 		0,//adcerrorcallback,
 		0,                        /* CR1 */
 		ADC_CR2_SWSTART,          /* CR2 */
+#ifdef IS_ROVMCU
+		ADC_SMPR1_SMP_AN11(ADC_SAMPLE_56) |
+		ADC_SMPR1_SMP_SENSOR(ADC_SAMPLE_144) |
+		ADC_SMPR1_SMP_VREF(ADC_SAMPLE_144),
+		ADC_SMPR2_SMP_AN4(ADC_SAMPLE_56) |
+		ADC_SMPR2_SMP_AN5(ADC_SAMPLE_56) |
+		ADC_SMPR2_SMP_AN6(ADC_SAMPLE_56),
+		ADC_SQR1_NUM_CH(ADC_GRP_NUM_CHANNELS),
+		0,
+		ADC_SQR3_SQ6_N(ADC_CHANNEL_SENSOR) | ADC_SQR3_SQ5_N(ADC_CHANNEL_VREFINT) |
+		ADC_SQR3_SQ4_N(ADC_CHANNEL_IN6) | ADC_SQR3_SQ3_N(ADC_CHANNEL_IN5) |
+		ADC_SQR3_SQ2_N(ADC_CHANNEL_IN4) | ADC_SQR3_SQ1_N(ADC_CHANNEL_IN11)
+#else
 		ADC_SMPR1_SMP_AN10(ADC_SAMPLE_56) |
 		ADC_SMPR1_SMP_AN11(ADC_SAMPLE_56) |
 		ADC_SMPR1_SMP_AN12(ADC_SAMPLE_56) |
@@ -97,15 +127,24 @@ static const ADCConversionGroup adcgrpcfg = {
 #endif
 		ADC_SQR3_SQ4_N(ADC_CHANNEL_IN13) | ADC_SQR3_SQ3_N(ADC_CHANNEL_IN12) |
 		ADC_SQR3_SQ2_N(ADC_CHANNEL_IN11) | ADC_SQR3_SQ1_N(ADC_CHANNEL_IN10)
+#endif
 };
 
 void adconv_init(void) {
+#ifdef IS_ROVMCU
+	// PC0/PC2/PC3 have no populated ADC input path. J30 ADC11-13 are PA4-6.
+	palSetPadMode(GPIOC, 1, PAL_MODE_INPUT_ANALOG);
+	palSetPadMode(GPIOA, 4, PAL_MODE_INPUT_ANALOG);
+	palSetPadMode(GPIOA, 5, PAL_MODE_INPUT_ANALOG);
+	palSetPadMode(GPIOA, 6, PAL_MODE_INPUT_ANALOG);
+#else
 	palSetPadMode(GPIOC, 0, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 1, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 2, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 3, PAL_MODE_INPUT_ANALOG);
 #ifdef ANGLE_SENSOR_PA3
 	palSetPadMode(GPIOA, 3, PAL_MODE_INPUT_ANALOG);
+#endif
 #endif
 
 	adcStart(&ADCD1, NULL);
@@ -114,8 +153,13 @@ void adconv_init(void) {
 	adcStartConversion(&ADCD1, &adcgrpcfg, samples, ADC_GRP_BUF_DEPTH);
 
 	terminal_register_command_callback(
+#ifdef IS_ROVMCU
+			"adconv_get_5v",
+			"Read the regulated 5 V rail (not battery voltage).",
+#else
 			"adconv_get_vin",
 			"Read the input voltage.",
+#endif
 			0,
 			terminal_cmd_get_vin);
 
@@ -149,24 +193,47 @@ uint16_t adconv_get_pin(int pin) {
  * The voltage in volts.
  */
 float adconv_get_volts(int pin) {
-	const float v_reg = (VREFINT * 4095.0) / (float)samples[6];
+#ifdef IS_ROVMCU
+	if (samples[ADC_VREF_INDEX] == 0) {
+		return 0.0f;
+	}
+#endif
+	const float v_reg = (VREFINT * 4095.0) / (float)samples[ADC_VREF_INDEX];
 	return (float)adconv_get_pin(pin) / 4095.0 * v_reg;
 }
 
 /**
- * Get the filtered input voltage.
+ * Get battery voltage: filtered ADC on legacy boards, VESC/CAN on MP101.
  *
  * @return
- * The input voltage to the PCB in volts.
+ * Battery voltage in volts (zero on MP101 until the first CAN reading).
  */
 float adconv_get_vin(void) {
+#ifdef IS_ROVMCU
+	// Keep all battery-voltage consumers on the same VESC/CAN source used by
+	// CMD_GET_STATE. Zero before the first reply means no battery reading yet.
+	mc_values values;
+	pos_get_mc_val(&values);
+	return values.v_in;
+#else
+	return vin_filter;
+#endif
+}
+
+#ifdef IS_ROVMCU
+float adconv_get_5v(void) {
 	return vin_filter;
 }
+#endif
 
 static void terminal_cmd_get_vin(int argc, const char **argv) {
 	(void)argc;
 	(void)argv;
+#ifdef IS_ROVMCU
+	commands_printf("Regulated 5 V rail: %.2f V\n", (double)adconv_get_5v());
+#else
 	commands_printf("Input Voltage: %.2f V\n", (double)adconv_get_vin());
+#endif
 }
 
 #ifdef ANGLE_SENSOR_PA3

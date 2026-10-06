@@ -12,6 +12,9 @@
 # Användning:
 #   ./flash_styrkort.sh                      interaktivt, som förut
 #   ./flash_styrkort.sh --maskin drangen     hoppa över maskinfrågan
+#   ./flash_styrkort.sh --maskin rovmcu --profil robant
+#                                            MP101/ROV_MCU-kortet (Upwis) med en maskins
+#                                            inställningar (robant, mactrac eller drangen)
 #   ./flash_styrkort.sh --bara-bygg          bygg och kontrollera, RÖR INGEN HÅRDVARA
 #   ./flash_styrkort.sh --patch FIL.patch    bygg i en TILLFÄLLIG KOPIA med patchen
 #                                            applicerad; din firmware-mapp lämnas orörd
@@ -36,6 +39,7 @@ REAL_USER=${SUDO_USER:-$USER}
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 FW_NAME=""
+PROFIL=""
 PATCH_FILE=""
 BUILD_ONLY=0
 FW_DIR_ARG="${RC_FW_DIR:-}"
@@ -48,6 +52,7 @@ usage() {
 while [ $# -gt 0 ]; do
   case "$1" in
     --maskin)     FW_NAME="$2"; shift 2 ;;
+    --profil|--profile) PROFIL="$2"; shift 2 ;;
     --patch)      PATCH_FILE="$2"; shift 2 ;;
     --bara-bygg)  BUILD_ONLY=1; shift ;;
     --fw-dir)     FW_DIR_ARG="$2"; shift 2 ;;
@@ -124,13 +129,15 @@ if [ -z "$FW_NAME" ]; then
   echo -e " 1) ${BOLD}Drängen${NC}"
   echo -e " 2) ${BOLD}Mactrac${NC}"
   echo -e " 3) ${BOLD}RobAnt${NC} (VESC 28/36/76)"
-  echo -e " 4) ${BOLD}ROV_MCU${NC} (Upwis nya kort; flashas helst med flash_styrkort_rovmcu.sh)"
+  echo -e " 4) ${BOLD}ROV_MCU / MP101${NC} (Upwis nya kort; flashas helst med flash_styrkort_rovmcu.sh)"
   read -p "Välj maskin (1, 2, 3 eller 4): " M_CHOICE
   case "$M_CHOICE" in
     1) FW_NAME="drangen" ;;
     2) FW_NAME="mactrac" ;;
     3) FW_NAME="robant" ;;
-    4) FW_NAME="rovmcu" ;;
+    4) FW_NAME="rovmcu"
+       read -p "Vilken maskin sitter kortet i? 1) Drängen 2) Mactrac 3) RobAnt [3]: " P_CHOICE
+       case "${P_CHOICE:-3}" in 1) PROFIL="drangen" ;; 2) PROFIL="mactrac" ;; *) PROFIL="robant" ;; esac ;;
     *) echo -e "${RED}Ogiltigt val! Avbryter.${NC}"; exit 1 ;;
   esac
 else
@@ -169,17 +176,32 @@ else
   FW_DIR="$FW_SRC"
 fi
 
-echo -e "\nKompilerar firmware för ${BOLD}$FW_NAME${NC}..."
+# MP101/ROV_MCU byggs som en vanlig maskin med BOARD=mp101 (Upwis, rise_sdvp PR #1).
+# Äldre firmwarekällor saknar BOARD och har i stället målet "rovmcu".
+MAKE_TARGET="$FW_NAME"
+MAKE_BOARD=""
+if [ -n "$PROFIL" ] && [ "$FW_NAME" != rovmcu ]; then
+  echo -e "${RED}--profil gäller bara --maskin rovmcu.${NC}"; exit 1
+fi
+if [ "$FW_NAME" = rovmcu ]; then
+  case "${PROFIL:=robant}" in drangen|mactrac|robant) ;; *) echo -e "${RED}Okänd profil '$PROFIL' (robant, mactrac eller drangen).${NC}"; exit 1 ;; esac
+  if grep -q '^BOARD ?=' "$FW_DIR/Makefile"; then
+    MAKE_TARGET="$PROFIL"
+    MAKE_BOARD="BOARD=mp101"
+  fi
+fi
+
+echo -e "\nKompilerar firmware för ${BOLD}$FW_NAME${NC}${MAKE_BOARD:+ (${PROFIL}, $MAKE_BOARD)}..."
 
 # Bygg källkoden (körs som den vanliga användaren för att undvika root-ägda filer)
 if [ "$EUID" -eq 0 ]; then
-  sudo -u "$REAL_USER" bash -c "cd '$FW_DIR' && make clean && make -j\$(nproc) $FW_NAME"
+  sudo -u "$REAL_USER" bash -c "cd '$FW_DIR' && make clean && make -j\$(nproc) $MAKE_TARGET $MAKE_BOARD"
 else
-  ( cd "$FW_DIR" && make clean && make -j"$(nproc)" "$FW_NAME" )
+  ( cd "$FW_DIR" && make clean && make -j"$(nproc)" "$MAKE_TARGET" $MAKE_BOARD )
 fi
 BUILD_RC=$?
 
-BIN="$FW_DIR/build/fw_${FW_NAME}.bin"
+BIN="$FW_DIR/build/fw_${MAKE_TARGET}.bin"
 if [ $BUILD_RC -eq 0 ] && [ -f "$BIN" ]; then
   echo -e "${GREEN}✅ Styrkortets firmware ($FW_NAME) kompilerad framgångsrikt!${NC}"
   echo -e "   Fil:    $BIN"
