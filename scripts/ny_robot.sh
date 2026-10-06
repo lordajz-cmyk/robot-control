@@ -110,7 +110,7 @@ if ssh "$PI" 'test -f /etc/robotd/config.json'; then
 fi
 
 echo -e "${GREEN}--- Kopierar projektet ---${NC}"
-rsync -a --exclude target --exclude .git --exclude osm_tiles --exclude '*.png' ./ "${PI}:robot-control/"
+rsync -a --exclude target --exclude .git --exclude osm_tiles --include '/rise_sdvp/Linux/Car_Client/res/**' --exclude '*.png' ./ "${PI}:robot-control/"
 
 SKIPPA_I2C=1
 [ "$I2C" = "j" ] && SKIPPA_I2C=0

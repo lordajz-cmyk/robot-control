@@ -15,6 +15,6 @@ PI="${PI:-robant@192.168.200.10}"
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 echo "--- Kopierar till ${PI}:robot-control ---"
-rsync -a --exclude target --exclude .git --exclude osm_tiles --exclude '*.png' ./ "${PI}:robot-control/"
+rsync -a --exclude target --exclude .git --exclude osm_tiles --include '/rise_sdvp/Linux/Car_Client/res/**' --exclude '*.png' ./ "${PI}:robot-control/"
 
 ssh -t "$PI" "cd robot-control && bash scripts/uppdatera_robotd.sh ${1:-}"
