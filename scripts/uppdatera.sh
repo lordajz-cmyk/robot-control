@@ -27,12 +27,21 @@ for a in "$@"; do
   esac
 done
 
+# GitHub-kontot bytte namn 2026-10-06 (lordajz-cmyk -> maprosystemsab). GitHub skickar
+# vidare från det gamla namnet, men byt adressen så att det fungerar även om det upphör.
+ny_adress() {
+  local url
+  url="$(git -C "$1" remote get-url origin 2>/dev/null)" || return 0
+  case "$url" in *lordajz-cmyk*) git -C "$1" remote set-url origin "${url//lordajz-cmyk/maprosystemsab}" ;; esac
+}
+
 if [ "$EFTER_PULL" -eq 0 ]; then
   if pgrep -x RControlStation >/dev/null || pgrep -x robotstyrning >/dev/null; then
     echo -e "${RED}Stäng Robotstyrning och RControlStation först, och kör sedan samma kommando igen.${NC}"
     exit 1
   fi
   steg "Hämtar senaste versionen (git pull)"
+  ny_adress .
   if ! git pull --ff-only; then
     echo -e "${RED}git pull gick inte. Har filer i ~/robot-control ändrats för hand?${NC}"
     exit 1

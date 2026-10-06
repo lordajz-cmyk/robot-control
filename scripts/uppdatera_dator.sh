@@ -30,8 +30,17 @@ if pgrep -x RControlStation >/dev/null || pgrep -x robotstyrning >/dev/null; the
   exit 1
 fi
 
+# GitHub-kontot bytte namn 2026-10-06 (lordajz-cmyk -> maprosystemsab). GitHub skickar
+# vidare från det gamla namnet, men byt adressen så att det fungerar även om det upphör.
+ny_adress() {
+  local url
+  url="$(git -C "$1" remote get-url origin 2>/dev/null)" || return 0
+  case "$url" in *lordajz-cmyk*) git -C "$1" remote set-url origin "${url//lordajz-cmyk/maprosystemsab}" ;; esac
+}
+
 if [ "$EFTER_PULL" -eq 0 ]; then
   steg "1/3 Hämtar senaste versionen (git pull)"
+  ny_adress .
   if ! git pull --ff-only; then
     echo -e "${RED}git pull gick inte. Har filer i ~/robot-control ändrats för hand?${NC}"
     echo "Visa: git status    Ångra ändringarna: git checkout -- .    Kör sedan igen."
@@ -77,7 +86,7 @@ if [ -z "$RCS_REPO" ]; then
     echo "RControlStation är inte installerad (steg 8 i guiden) — hoppar över."
     RESULTAT+=("RControlStation: inte installerad")
   fi
-elif ! git -C "$RCS_REPO" pull --ff-only; then
+elif ! { ny_adress "$RCS_REPO"; git -C "$RCS_REPO" pull --ff-only; }; then
   echo -e "${RED}git pull i $RCS_REPO gick inte (ändrade filer?).${NC}"
   RESULTAT+=("RControlStation: FEL vid git pull")
 else
