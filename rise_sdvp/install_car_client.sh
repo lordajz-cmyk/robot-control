@@ -3,7 +3,7 @@
 # ==============================================================================
 # 🍓 install_car_client.sh: grundsystemet på robotens Raspberry Pi
 # ==============================================================================
-# Kopia av install_pi.sh från lordajz-cmyk/rise_sdvp (commit 1b55ca6), så att
+# Kopia av install_pi.sh från maprosystemsab/rise_sdvp (commit 1b55ca6), så att
 # robot-control går att installera utan att klona rise_sdvp. Körs PÅ Pi:n:
 #     cd robot-control/rise_sdvp && sudo CAR_ID=4 ./install_car_client.sh
 # (eller via scripts/ny_robot.sh från datorn). CAR_ID = Car_Client --setid.

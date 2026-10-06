@@ -45,7 +45,7 @@ Kort version för en Ubuntu-dator (22.04 eller nyare):
 
 ```bash
 sudo apt install -y git
-git clone https://github.com/lordajz-cmyk/robot-control.git ~/robot-control
+git clone https://github.com/maprosystemsab/robot-control.git ~/robot-control
 cd ~/robot-control
 sudo bash wireguard/wireguard.sh        # datorn med i robotens nätverk (skicka nyckeln till oss)
 bash scripts/install_client.sh          # bygger och installerar Robotstyrning (10–20 min)
@@ -72,7 +72,7 @@ Följ **[installationsguide.md](installationsguide.md)**. Kort sagt:
 ## RControlStation
 
 Robotarna fungerar också med **RControlStation** (karta, GPS/RTK, rutter), från
-[rise_sdvp](https://github.com/lordajz-cmyk/rise_sdvp). Installeras med
+[rise_sdvp](https://github.com/maprosystemsab/rise_sdvp). Installeras med
 `sudo bash install_dator.sh` i det repot, se steg 8 i kundguiden.
 Robotstyrning och RControlStation kan inte vara anslutna till samma robot samtidigt.
 

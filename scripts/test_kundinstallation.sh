@@ -45,7 +45,7 @@ echo "Ubuntu: $(lsb_release -ds)"
 som_kund() { su - kund -c "export DEBIAN_FRONTEND=noninteractive TZ=Europe/Stockholm; $*"; }
 
 steg "Steg 2: sudo apt install -y git + git clone robot-control"
-som_kund 'sudo apt install -y git 2>&1 | tail -3 && git clone -q https://github.com/lordajz-cmyk/robot-control.git ~/robot-control && ls ~/robot-control | tr "\n" " "' \
+som_kund 'sudo apt install -y git 2>&1 | tail -3 && git clone -q https://github.com/maprosystemsab/robot-control.git ~/robot-control && ls ~/robot-control | tr "\n" " "' \
   && echo "STEG2 OK" || echo "STEG2 FEL"
 
 steg "Steg 4: bash scripts/install_client.sh"
@@ -54,7 +54,7 @@ rc=$?; tail -25 /tmp/install_client.log
 [ $rc -eq 0 ] && echo "STEG4 OK" || echo "STEG4 FEL (exit $rc)"
 
 steg "Steg 8: git clone rise_sdvp + sudo bash install_dator.sh (svar: y)"
-som_kund 'git clone -q https://github.com/lordajz-cmyk/rise_sdvp.git ~/rise_sdvp && cd ~/rise_sdvp && echo y | sudo bash install_dator.sh' > /tmp/install_dator.log 2>&1
+som_kund 'git clone -q https://github.com/maprosystemsab/rise_sdvp.git ~/rise_sdvp && cd ~/rise_sdvp && echo y | sudo bash install_dator.sh' > /tmp/install_dator.log 2>&1
 rc=$?; tail -25 /tmp/install_dator.log
 [ $rc -eq 0 ] && echo "STEG8 OK" || echo "STEG8 FEL (exit $rc)"
 

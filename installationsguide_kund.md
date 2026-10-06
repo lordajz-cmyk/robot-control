@@ -58,7 +58,7 @@ Klistra in raderna, en i taget, och tryck Enter efter varje:
 sudo apt install -y git
 ```
 ```
-git clone https://github.com/lordajz-cmyk/robot-control.git ~/robot-control
+git clone https://github.com/maprosystemsab/robot-control.git ~/robot-control
 ```
 
 Kontrollera att det blev rätt:
@@ -190,7 +190,7 @@ så du kan klicka på den. WireGuard startar av sig själv när datorn startar.
 inte för att köra, men vill du ha det installerar du det så här. Klistra in raderna,
 en i taget:
 ```
-git clone https://github.com/lordajz-cmyk/rise_sdvp.git ~/rise_sdvp
+git clone https://github.com/maprosystemsab/rise_sdvp.git ~/rise_sdvp
 ```
 ```
 cd ~/rise_sdvp

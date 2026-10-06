@@ -1,6 +1,6 @@
 # rise_sdvp: det som robot-control behöver
 
-En kopia av de delar av [lordajz-cmyk/rise_sdvp](https://github.com/lordajz-cmyk/rise_sdvp)
+En kopia av de delar av [maprosystemsab/rise_sdvp](https://github.com/maprosystemsab/rise_sdvp)
 som robotd bygger på, så att robot-control går att installera på en robot
 **utan att klona rise_sdvp**. Kopierad från commit `1b55ca6` (2026-09-23),
 alltså samma version som kör RobAnt.

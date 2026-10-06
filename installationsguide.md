@@ -42,7 +42,7 @@ I guiden står det var varje kommando körs:
 
 **Datorn:**
 ```bash
-git clone git@github.com:lordajz-cmyk/robot-control.git
+git clone git@github.com:maprosystemsab/robot-control.git
 cd robot-control
 bash scripts/install_client.sh        # bygger robotstyrning + genväg i terminalen och programmenyn
 sudo ./wireguard/wireguard.sh         # datorn på VPN:et, se wireguard/Wireguard_Guide.md

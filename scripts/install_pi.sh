@@ -199,7 +199,7 @@ elif command -v screen >/dev/null 2>&1 && screen -list 2>/dev/null | grep -q "\.
 else
   echo "[INFO]    Varken car_client.service eller en 'car'-screen-session"
   echo "          hittades. Normalt om ni inte kört er andra installation"
-  echo "          (lordajz-cmyk/rise_sdvp: install_pi.sh/install_allt.sh) än."
+  echo "          (maprosystemsab/rise_sdvp: install_pi.sh/install_allt.sh) än."
 fi
 
 if systemctl is-active --quiet car_rtk.service 2>/dev/null; then
