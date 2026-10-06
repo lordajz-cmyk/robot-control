@@ -32,6 +32,7 @@ SOURCES += main.cpp \
     tcpbroadcast.cpp \
     utility.cpp \
     carclient.cpp \
+    nodstopp.cpp \
     locpoint.cpp \
     rtcm3_simple.c \
     ublox.cpp \
@@ -53,6 +54,7 @@ HEADERS += \
     tcpbroadcast.h \
     utility.h \
     carclient.h \
+    nodstopp.h \
     datatypes.h \
     locpoint.h \
     rtcm3_simple.h \

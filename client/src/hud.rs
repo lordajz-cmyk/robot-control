@@ -219,6 +219,17 @@ pub fn show(ui: &mut egui::Ui, s: Option<&StatusUpdate>, ping_ms: Option<u32>, v
     }
     ui.label(RichText::new(format!("Video: {video}")).color(DIM).size(12.0));
 
+    // --- Nödstopp -------------------------------------------------------------
+    if let Some(text) = s.and_then(|s| estop_text(s.estop.as_deref())) {
+        egui::Frame::none()
+            .fill(Color32::from_rgb(200, 0, 0))
+            .rounding(5.0)
+            .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+            .show(ui, |ui| {
+                ui.label(RichText::new(text).color(Color32::WHITE).size(20.0).strong());
+            });
+    }
+
     // --- Fel -------------------------------------------------------------------
     if let Some(err) = s.and_then(|s| s.fault_text.clone().or_else(|| s.last_error.clone())) {
         egui::Frame::none()
@@ -228,6 +239,17 @@ pub fn show(ui: &mut egui::Ui, s: Option<&StatusUpdate>, ping_ms: Option<u32>, v
             .show(ui, |ui| {
                 ui.label(RichText::new(format!("⚠ {err}")).color(Color32::WHITE).size(15.0).strong());
             });
+    }
+}
+
+/// Text att visa för nödstoppets läge (från robotd), eller `None` när allt är OK
+/// eller nödstopp inte finns på roboten.
+pub fn estop_text(state: Option<&str>) -> Option<&'static str> {
+    match state? {
+        "ok" => None,
+        "intryckt" => Some("⛔ NÖDSTOPP INTRYCKT"),
+        "sparrad" => Some("Nödstopp utdraget – släpper spärren…"),
+        _ => Some("⛔ NÖDSTOPP: knappen går inte att läsa (kabel?)"),
     }
 }
 

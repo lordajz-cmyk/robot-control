@@ -73,6 +73,7 @@ void showHelp()
     qDebug() << "--simlogen [rateHz] : Enable simulator logging output at rateHz Hz";
     qDebug() << "--simuwben [port]:[rateHz] : Enable simulator UWB emulation output on TCP port port at rateHz Hz";
     qDebug() << "--setid [id] : Override ID of board";
+    qDebug() << "--nodstopp-gpio [n] : Nödstopp (NC-brytare mellan GPIO n och GND). Bruten krets spärrar all körning";
     qDebug() << "--broadcastcarstate : Broadcast state received from car on TCP Port 2102";
 #ifdef HAS_GUI
     qDebug() << "--usegui : Use QML GUI";
@@ -152,6 +153,7 @@ int main(int argc, char *argv[])
     int simUwbHz = -1;
     int simUwbTcpPort = -1;
     int carId = -1;
+    int nodstoppGpio = -1;
     bool broadcastCarState = false;
     std::unique_ptr<CarStateBroadcaster> carstatebroadcaster;
 
@@ -446,6 +448,18 @@ int main(int argc, char *argv[])
             }
         }
 
+        if (str == "--nodstopp-gpio") {
+            if ((i + 1) < args.size()) {
+                i++;
+                bool ok;
+                nodstoppGpio = args.at(i).toInt(&ok);
+                found = ok;
+                if (!ok) {
+                    nodstoppGpio = -1;
+                }
+            }
+        }
+
         if (str == "--setid") {
             if ((i + 1) < args.size()) {
                 i++;
@@ -498,6 +512,9 @@ int main(int argc, char *argv[])
 #endif
 
     car.setCarIdToSet(carId);
+    if (nodstoppGpio >= 0) {
+        car.enableNodstopp(nodstoppGpio);
+    }
     if (carId != -1) {
         car.setCarId(carId); // Initialize mCarId to the specified ID on startup to avoid auto-detecting ID 0 from the board's default boot ID before setid is processed!
     }

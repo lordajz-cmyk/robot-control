@@ -7,6 +7,9 @@
 # robot-control går att installera utan att klona rise_sdvp. Körs PÅ Pi:n:
 #     cd robot-control/rise_sdvp && sudo CAR_ID=4 ./install_car_client.sh
 # (eller via scripts/ny_robot.sh från datorn). CAR_ID = Car_Client --setid.
+# NODSTOPP_GPIO=27: nödstoppsknapp (NC-brytare mellan GPIO27 och GND) är inkopplad.
+# Car_Client spärrar då all körning när kretsen bryts. Utelämna om ingen knapp finns
+# (en okopplad pinne läses som intryckt nödstopp).
 # ==============================================================================
 # Detta skript sätter upp alla paket, udev-regler, Swepos, bygger Car_Client
 # och ställer in boot-autostart på din Raspberry Pi.
@@ -258,7 +261,7 @@ cat <<EOF > "$START_SCRIPT"
 #!/bin/bash
 # Startar Car_Client i en bakgrunds-screen (namn "car") med en initial fördröjning inuti
 # screen (icke-blockerande för systemd). Avslutas Car_Client startas den om efter 3 s.
-screen -S car -d -m bash -c "sleep 15; cd '$CLIENT_DIR'; while true; do ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210 --setid ${CAR_ID:-4}; echo \"\\\$(date +%T) Car_Client avslutades (kod \\\$?), startar om om 3 s\" | tee -a '$REAL_HOME/car_client_omstarter.log'; sleep 3; done"
+screen -S car -d -m bash -c "sleep 15; cd '$CLIENT_DIR'; while true; do ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210 --setid ${CAR_ID:-4}${NODSTOPP_GPIO:+ --nodstopp-gpio $NODSTOPP_GPIO}; echo \"\\\$(date +%T) Car_Client avslutades (kod \\\$?), startar om om 3 s\" | tee -a '$REAL_HOME/car_client_omstarter.log'; sleep 3; done"
 echo "Car_Client startades i en screen-session med namnet 'car'."
 echo "För att ansluta live, kör: screen -r car"
 EOF

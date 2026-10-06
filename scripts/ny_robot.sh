@@ -54,6 +54,8 @@ fraga "VESC-ID på roboten, kommaseparerade" "28,36,76"
 VESC_IDS="$(echo "$SVAR" | tr -d ' ')"
 fraga "Max vid fullt spakutslag (som Max i RControlStation)" "0.45"
 DRIVE_MAX="$SVAR"
+fraga "Är en nödstoppsknapp (NC) inkopplad på GPIO27 och GND? (j/n)" "n"
+NODSTOPP="$SVAR"
 fraga "Slå på I2C för OLED-skärmen? Kräver omstart av Pi:n senare (j/n)" "n"
 I2C="$SVAR"
 fraga "Installera WireGuard på Pi:n nu? (j/n)" "n"
@@ -71,6 +73,7 @@ echo "  Bil-ID:     $CAR_ID"
 echo "  VESC:       $VESC_IDS"
 echo "  Max:        $DRIVE_MAX"
 echo "  I2C/OLED:   $I2C"
+echo "  Nödstopp:   $NODSTOPP (GPIO27)"
 echo "  WireGuard:  $WG     Grundsystem: $GRUND"
 echo "  Startar automatiskt vid uppstart, tar Car_Client bara medan någon kör"
 echo "  med robotstyrning (RControlStation fungerar som vanligt annars)."
@@ -112,6 +115,9 @@ fi
 echo -e "${GREEN}--- Kopierar projektet ---${NC}"
 rsync -a --exclude target --exclude .git --exclude osm_tiles --include '/rise_sdvp/Linux/Car_Client/res/**' --exclude '*.png' ./ "${PI}:robot-control/"
 
+NODSTOPP_GPIO=""
+[ "$NODSTOPP" = "j" ] && NODSTOPP_GPIO=27
+
 SKIPPA_I2C=1
 [ "$I2C" = "j" ] && SKIPPA_I2C=0
 
@@ -124,7 +130,7 @@ fi
 
 if [ "$GRUND" = "j" ]; then
   echo -e "${GREEN}--- Grundsystemet: Car_Client, Swepos-RTK, udev (frågar efter Swepos-konto) ---${NC}"
-  ssh -t "$PI" "cd robot-control/rise_sdvp && sudo CAR_ID='$CAR_ID' ./install_car_client.sh"
+  ssh -t "$PI" "cd robot-control/rise_sdvp && sudo CAR_ID='$CAR_ID' NODSTOPP_GPIO='$NODSTOPP_GPIO' ./install_car_client.sh"
 fi
 
 echo -e "${GREEN}--- Installerar robotd (frågar efter sudo-lösenordet) ---${NC}"

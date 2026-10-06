@@ -37,6 +37,7 @@
 #include "tcpserversimple.h"
 #include "rtcmclient.h"
 #include "carsim/carsim.h"
+#include "nodstopp.h"
 
 #include <QCoreApplication>
 #include <QProcess>
@@ -129,11 +130,15 @@ public slots:
     void handleRos2Connection();
     void readRos2Command();
 
+    // Nödstopp: NC-brytare på GPIO<gpio> (se nodstopp.h). Av om den inte anropas.
+    void enableNodstopp(int gpio);
+
 
 private slots:
     void processCarData(QByteArray data);
     void cameraImageCaptured(QImage img);
     void logBroadcasterDataReceived(QByteArray &data);
+    void nodstoppTick();
 //    QString processCommand(QByteArray &data);
 
 private:
@@ -167,6 +172,23 @@ private:
     QList<CarSim*> mSimulatedCars;
     QVector<UWB_ANCHOR> mUwbAnchorsNow;
     int mCarIdToSet;
+
+    // Nödstopp (se enableNodstopp). Läget skrivs till /tmp/nodstopp_status för robotd
+    // och statusskärmen: "ok", "intryckt", "sparrad" (knappen ute, väntar på ett
+    // stoppkommando från föraren) eller "fel" (pinnen går inte att läsa = nödstopp).
+    enum NodstoppLage { NS_AV, NS_OK, NS_INTRYCKT, NS_SPARRAD, NS_FEL };
+    NodstoppGpio *mNodstopp = nullptr;
+    QTimer *mNodstoppTimer = nullptr;
+    NodstoppLage mNsLage = NS_AV;
+    int mNsBrutenIRad = 0;
+    QElapsedTimer mNsSlutenSedan;   // tid som kontakten varit sluten utan avbrott
+    QElapsedTimer mNsStoppSkickat;  // senaste nollkommando till kortet
+    QElapsedTimer mNsApSkickat;     // senaste "autopilot av" till kortet
+    QElapsedTimer mNsFilSkriven;
+    bool nodstoppSparrar(const QByteArray &data);
+    void nodstoppSattLage(NodstoppLage lage, const QString &text);
+    void nodstoppSkrivFil();
+    void skickaTillKlienter(const QByteArray &data);
 
     QString mUsr;
     QString mPwd;

@@ -169,6 +169,10 @@ pub struct StatusUpdate {
     /// Mer om mobilnätet, t.ex. "4G Telia · RSRP −95 dBm · SINR 12 dB".
     #[serde(default)]
     pub signal_info: Option<String>,
+    /// Nödstoppet: "ok", "intryckt", "sparrad" (utdraget, väntar på stopp från föraren)
+    /// eller "fel". `None` = inget nödstopp installerat på roboten.
+    #[serde(default)]
+    pub estop: Option<String>,
 }
 
 /// En körlogg på roboten (CSV, en per körning).

@@ -152,6 +152,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     fault_text: (battery_percent < 15.0).then(|| "Underspänning – batteriet är nästan tomt".to_string()),
                     rssi_dbm: Some(-71),
                     signal_info: Some("4G Telia · RSRP −95 dBm · SINR 12 dB".to_string()),
+                    estop: None,
                 };
                 if send(&mut ws_tx, &RobotMessage::Status(status)).await.is_err() {
                     break;

@@ -296,6 +296,14 @@ impl App {
         if !self.gamepad_connected {
             self.activated = false;
         }
+        // Nödstopp på roboten: lås, föraren måste aktivera igen när knappen är ute.
+        if self
+            .net
+            .fresh_status()
+            .is_some_and(|st| hud::estop_text(st.estop.as_deref()).is_some())
+        {
+            self.activated = false;
+        }
         // Esc låser också, snabbare än att sikta på knappen.
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.activated = false;
@@ -661,6 +669,9 @@ impl App {
         let Some(status) = self.net.fresh_status() else {
             return Some("Väntar på status från roboten…".to_string());
         };
+        if let Some(text) = hud::estop_text(status.estop.as_deref()) {
+            return Some(text.to_string());
+        }
         if let Some(err) = &status.last_error {
             if status.vescs_responding.is_empty() {
                 return Some(err.clone());

@@ -4,6 +4,7 @@ mod car_client_link;
 mod config;
 mod display;
 mod drive_log;
+mod estop;
 mod gpio_lighting;
 mod ramp;
 mod router;
@@ -132,6 +133,11 @@ async fn main() {
     }
     let mut drive_log = drive_log::DriveLog::new(&cfg.vehicle.drive_log_dir, cfg.vehicle.drive_log_keep_days);
     let mut status_count: u64 = 0;
+    // Nödstoppet (läses av Car_Client, se estop.rs). Efter ett nödstopp krävs att
+    // föraren slår av AKTIVERA och sedan på igen innan robotd kör.
+    let mut estop_state = estop::read();
+    let mut estop_needs_reactivate = estop_state.is_some_and(|s| s != estop::Estop::Ok);
+    let mut estop_tick: u32 = 0;
 
     loop {
         tokio::select! {
@@ -140,12 +146,35 @@ async fn main() {
                 let dt = now.duration_since(last_tick).as_secs_f32();
                 last_tick = now;
 
+                estop_tick = estop_tick.wrapping_add(1);
+                if estop_tick % 5 == 0 {
+                    let read = estop::read();
+                    if read != estop_state {
+                        tracing::warn!(
+                            "Nödstopp: {} -> {}",
+                            estop_state.map_or("ej installerat", |s| s.as_str()),
+                            read.map_or("ej installerat", |s| s.as_str())
+                        );
+                        estop_state = read;
+                    }
+                }
+                let estop_active = estop_state.is_some_and(|s| s != estop::Estop::Ok);
+                if estop_active {
+                    estop_needs_reactivate = true;
+                    target_throttle = 0.0;
+                    target_steering = 0.0;
+                }
+
                 let wd_state = watchdog.state(now);
                 if wd_state != last_wd_state {
                     tracing::info!("Watchdog: {last_wd_state:?} -> {wd_state:?}");
                     last_wd_state = wd_state;
                 }
                 match wd_state {
+                    _ if estop_active => {
+                        throttle_ramp.reset(0.0);
+                        steering_ramp.reset(0.0);
+                    }
                     WatchdogState::Ok => {
                         throttle_ramp.step(target_throttle, dt);
                         steering_ramp.step(target_steering, dt);
@@ -197,7 +226,7 @@ async fn main() {
                         vehicle_tracker.update(Instant::now(), b.v_in, b.speed_ms, power)
                     });
                     let signal = router_signal.as_ref().and_then(|r| r.borrow().clone());
-                    let status = build_status(
+                    let mut status = build_status(
                         &l.status.borrow(),
                         &telemetry,
                         &cfg.known_vesc_ids,
@@ -205,6 +234,8 @@ async fn main() {
                         signal,
                         cfg.vehicle.steering_max_deg,
                     );
+
+                    status.estop = estop_state.map(|s| s.as_str().to_string());
 
                     // Körlogg: en fil per körning (medan länken till styrkortet är uppe,
                     // dvs. medan någon är ansluten), en rad per sekund.
@@ -245,6 +276,15 @@ async fn main() {
                 let clean = |v: f32| if cmd.activated && v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };
                 target_throttle = clean(cmd.throttle);
                 target_steering = clean(cmd.steering);
+                if estop_needs_reactivate {
+                    // Spärren släpps först när knappen är ute och föraren har slagit av AKTIVERA.
+                    if !cmd.activated && estop_state.is_none_or(|s| s == estop::Estop::Ok) {
+                        estop_needs_reactivate = false;
+                        tracing::info!("Nödstopp: AKTIVERA av efter nödstoppet, körning tillåts igen");
+                    }
+                    target_throttle = 0.0;
+                    target_steering = 0.0;
+                }
                 client_max = cmd.max_output.filter(|m| m.is_finite());
 
                 if cmd.lights != lights_on {
@@ -456,6 +496,7 @@ fn build_status(
         fault_text,
         rssi_dbm: signal.as_ref().and_then(|s| s.rssi_dbm),
         signal_info: signal.and_then(|s| s.info),
+        estop: None,
     }
 }
 
