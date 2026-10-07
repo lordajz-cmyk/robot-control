@@ -304,6 +304,12 @@ def rcontrolstation():
         p("Batteriprocenten bestäms när roboten står still och räknas sedan ner med förbrukad energi. "
           "Mellan 20 och 90 % är den ungefärlig (LiFePO4-batterier har nästan samma spänning där). "
           "<b>⚡ laddar</b> visas när roboten stått still i cirka 1,5 minut och spänningen stiger."),
+        p("<b>Batteri och fordon…</b> (knappen under statusrutan) ställer in batteriet för den maskin du är "
+          "ansluten till: <b>LiFePO4</b> med antal celler i serie, eller <b>linjärt</b> mellan tom och full "
+          "spänning, samt kapacitet i Wh och största styrvinkel. Inställningen sparas per maskin och visas i "
+          "grått under batteriraden. Utan egen inställning gäller standard: 16 celler LiFePO4, 4096 Wh."),
+        tips("Kapaciteten är spänning × amperetimmar, t.ex. 4 × 12,8 V 80 Ah = 4096 Wh. Den behövs för "
+             "nedräkningen under körning och för räckvidden."),
         h2("3.1 Körlogg"),
         p("Medan RControlStation är ansluten sparas en <b>körlogg</b> på datorn, en CSV-fil per anslutning "
           "med en rad per sekund, i mappen <b>Hämtningar/RControlStation-korloggar</b>. Den innehåller fart, "
