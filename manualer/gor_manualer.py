@@ -477,10 +477,13 @@ def rcontrolstation():
           "vilken yta som körts. <b>Cut Path</b> klipper rutten mot ett område."),
 
         h1("9. Handkontroll och styrning"),
-        h2("9.1 Panelen Control (nere till vänster)"),
+        h2("9.1 Aktivera dosa, Joystick och Control (nere till vänster)"),
         tabell([
             ["Inställning", "Gör"],
-            ["Active", "Handkontrollen/tangentbordet styr roboten."],
+            ["🎮 Aktivera dosa", "Dosan är <b>låst</b> när programmet startar. Klicka för att köra med dosan: "
+             "kryssar i <b>Active</b> och <b>Keyboard control</b> för vald bil. Går bara med robot och dosa "
+             "anslutna och spakarna i mitten. Knappen blir röd: <b>🔒 Lås dosa</b>."],
+            ["Active", "Dosan/tangentbordet styr roboten (följer knappen ovan)."],
             ["C / D / I", "Styrläge: C (fart), D (duty), I (ström). Normalt C."],
             ["Max", "Utslag vid fullt spakläge. Standard 0,42."],
             ["Två värden under Max", "Hur mycket tangentbordet ger (Keyboard gain) för gas och styrning."],
@@ -488,9 +491,11 @@ def rcontrolstation():
             ["STOP (stor knapp)", "Stannar alla robotar."],
         ], [1.5, 3]),
         h2("9.2 Handkontrollen"),
-        p("Dosan ansluts automatiskt (rutan <b>Joystick</b> visar om den är ansluten). Vänster spak upp/ner = "
-          "kör, höger spak åt sidan = sväng. L1/L2 och R1/R2 styr tillbehör. På handkontroll-fliken ser du vilken "
-          "spak som är kopplad till vilken funktion."),
+        p("Dosan ansluts automatiskt (rutan <b>Joystick</b> visar om den är ansluten), även om den dras ur och "
+          "sätts i igen. Vänster spak upp/ner = kör, höger spak åt sidan = sväng. L1/L2 och R1/R2 styr tillbehör. "
+          "På handkontroll-fliken ser du vilken spak som är kopplad till vilken funktion."),
+        varning("Dosan <b>låses av sig själv</b> (roboten får fart 0) när anslutningen till roboten bryts, när "
+                "dosan kopplas ur och efter 5 minuter utan spakrörelse. Klicka <b>Aktivera dosa</b> igen för att köra."),
 
         h1("10. Om något krånglar"),
         tabell([
